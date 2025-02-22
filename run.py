@@ -35,9 +35,34 @@ async def lifespan(app: FastAPI):
         max_size=db_max_size,
     )
     app.state.db_pool = pool
+    
+    app.state.token_usage_queue = asyncio.Queue()
+    asyncio.create_task(process_token_usage_queue(app))
+
     yield
     await pool.close()
     print("Closing database connection pool...")
+
+
+async def process_token_usage_queue(app: FastAPI):
+    while True:
+        token_data = await app.state.token_usage_queue.get()  # 获取队列中的数据
+        if token_data is None:
+            break
+
+        user_id, model_id, prompt_tokens, completion_tokens = token_data
+        try:
+            await insert_token_usage(
+                app.state.db_pool,
+                user_id,
+                model_id,
+                prompt_tokens,
+                completion_tokens,
+            )
+        except Exception as e:
+            print(f"数据库插入失败: {e}")
+        finally:
+            app.state.token_usage_queue.task_done()  # 标记任务完成
 
 
 app = FastAPI(lifespan=lifespan)
@@ -54,18 +79,15 @@ encoder = tiktoken.get_encoding("cl100k_base")
 @app.post("/v1/chat/completions")
 async def proxy_openai(request: Request):
     try:
-        # 解析请求体
         user_request = await request.json()
 
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
-        # 计算 prompt tokens
         messages = user_request.get("messages", [])
         prompt_text = " ".join([msg.get("content", "") for msg in messages])
         total_prompt_tokens = len(encoder.encode(prompt_text))
 
-        # 调用 OpenAI 客户端，获取流式响应
         response = client.chat.completions.create(
             model="/mnt/data/models/deepseek-ai_DeepSeek-R1",
             messages=messages,
@@ -74,26 +96,24 @@ async def proxy_openai(request: Request):
             stream_options={"include_usage": True},
         )
 
-        # 生成流式响应
         async def generate_response():
             nonlocal total_prompt_tokens, total_completion_tokens
 
             try:
-                for chunk in response:  # 使用同步 for 处理流式响应
+                for chunk in response:
                     if chunk.usage is not None:
-                        # 如果能拿到 chunk.usage，直接使用它的值
                         total_prompt_tokens = chunk.usage.prompt_tokens
                         total_completion_tokens = chunk.usage.completion_tokens
                         print(f"Total Prompt Tokens: {total_prompt_tokens}")
                         print(f"Total Completion Tokens: {total_completion_tokens}")
 
-                        # 插入数据到数据库
-                        await insert_token_usage(
-                            app.state.db_pool,
-                            user_id=1,  # user_id 写死为 1
-                            model_id=1,  # model_id 写死为 1
-                            prompt_tokens=total_prompt_tokens,
-                            completion_tokens=total_completion_tokens,
+                        await app.state.token_usage_queue.put(
+                            (
+                                1,
+                                1,
+                                total_prompt_tokens,
+                                total_completion_tokens,
+                            )
                         )
                         break
 
@@ -104,30 +124,19 @@ async def proxy_openai(request: Request):
                                 encoder.encode(choice.delta.content)
                             )
 
-                    # 检查客户端是否断开连接
-                    if await request.is_disconnected():  # 使用 await 调用异步方法
+                    if await request.is_disconnected():
                         print("客户端主动断开连接")
                         print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
                         print(
                             f"Total Completion Tokens (手动计算): {total_completion_tokens}"
                         )
 
-                        try:
-                            print("数据库插入触发1")
-                            await insert_token_usage(
-                                app.state.db_pool,
-                                user_id=1,
-                                model_id=1,
-                                prompt_tokens=total_prompt_tokens,
-                                completion_tokens=total_completion_tokens,
-                            )
-                            print("数据库插入触发2")
-                        except Exception as db_error:
-                            print(f"数据库插入失败: {db_error}")
-                        finally:
-                            return  # 确保插入完成后才返回
+                        await app.state.token_usage_queue.put(
+                            (1, 1, total_prompt_tokens, total_completion_tokens)
+                        )
 
-                    # 构建流式响应块
+                        return
+
                     chunk_data = ChatCompletionChunk(
                         id=chunk.id,
                         object=chunk.object,
@@ -177,7 +186,7 @@ async def proxy_openai(request: Request):
 async def get_users():
     async with app.state.db_pool.acquire() as connection:
         result = await connection.fetch("SELECT * FROM models")
-        return {"users": [dict(record) for record in result]}  # 将结果转换为字典
+        return {"users": [dict(record) for record in result]}
 
 
 async def insert_token_usage(
@@ -186,11 +195,11 @@ async def insert_token_usage(
     """
     插入 token 使用记录到数据库
     """
-    retries = 3  # 重试次数
+    retries = 3
     for attempt in range(retries):
         try:
             async with db_pool.acquire() as connection:
-                async with connection.transaction():  # 使用事务
+                async with connection.transaction():
                     await connection.execute(
                         """
                         INSERT INTO user_models_token_usage 
@@ -201,17 +210,17 @@ async def insert_token_usage(
                         model_id,
                         prompt_tokens,
                         completion_tokens,
-                        datetime.datetime.fromtimestamp(time.time()),  # 当前时间戳
+                        datetime.datetime.fromtimestamp(time.time()),
                     )
             print("数据插入成功")
-            break  # 插入成功，退出重试
+            break
         except Exception as db_error:
-            if attempt == retries - 1:  # 最后一次重试仍失败
+            if attempt == retries - 1:
                 print(f"数据库插入失败，重试 {attempt + 1} 次后仍失败: {db_error}")
-                raise  # 抛出异常，由调用方处理
+                raise
             else:
                 print(f"数据库插入失败，正在重试 ({attempt + 1}/{retries}): {db_error}")
-                await asyncio.sleep(1)  # 等待 1 秒后重试
+                await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
