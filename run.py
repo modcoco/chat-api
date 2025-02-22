@@ -1,5 +1,9 @@
+from contextlib import asynccontextmanager
+import os
 import time
 import json
+import asyncpg
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
@@ -7,7 +11,34 @@ from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
 
-app = FastAPI()
+load_dotenv()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    db_user = os.getenv("DB_USER", "default_user")
+    db_password = os.getenv("DB_PASSWORD", "default_password")
+    db_name = os.getenv("DB_NAME", "postgres")
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_min_size = int(os.getenv("DB_MIN_SIZE", "1"))
+    db_max_size = int(os.getenv("DB_MAX_SIZE", "10"))
+
+    print("Initializing database connection pool...")
+    pool = await asyncpg.create_pool(
+        user=db_user,
+        password=db_password,
+        database=db_name,
+        host=db_host,
+        min_size=db_min_size,
+        max_size=db_max_size,
+    )
+    app.state.db_pool = pool
+    yield
+    await pool.close()
+    print("Closing database connection pool...")
+
+
+app = FastAPI(lifespan=lifespan)
+
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
@@ -110,6 +141,13 @@ async def proxy_openai(request: Request):
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+@app.get("/v1/models")
+async def get_users():
+    async with app.state.db_pool.acquire() as connection:
+        result = await connection.fetch("SELECT * FROM models")
+        return {"users": [dict(record) for record in result]}  # 将结果转换为字典
 
 
 if __name__ == "__main__":
