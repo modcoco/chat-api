@@ -13,7 +13,6 @@ client = OpenAI(
     api_key="token-abc123",
 )
 
-# 创建 tiktoken 编码器
 encoder = tiktoken.get_encoding("cl100k_base")
 
 
