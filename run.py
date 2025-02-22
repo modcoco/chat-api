@@ -1,12 +1,13 @@
 import time
 import json
-from flask import Flask, request, Response
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
 
-app = Flask(__name__)
+app = FastAPI()
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
@@ -16,31 +17,35 @@ client = OpenAI(
 encoder = tiktoken.get_encoding("cl100k_base")
 
 
-@app.route("/v1/chat/completions", methods=["POST"])
-def proxy_openai():
+@app.post("/v1/chat/completions")
+async def proxy_openai(request: Request):
     try:
-        user_request = request.get_json()
+        # 解析请求体
+        user_request = await request.json()
 
         total_prompt_tokens = 0
         total_completion_tokens = 0
 
+        # 计算 prompt tokens
         messages = user_request.get("messages", [])
         prompt_text = " ".join([msg.get("content", "") for msg in messages])
         total_prompt_tokens = len(encoder.encode(prompt_text))
 
+        # 调用 OpenAI 客户端，获取流式响应
         response = client.chat.completions.create(
             model="/mnt/data/models/deepseek-ai_DeepSeek-R1",
             messages=messages,
             temperature=0,
-            stream=True,
+            stream=True,  # 确保 stream=True
             stream_options={"include_usage": True},
         )
 
+        # 生成流式响应
         def generate_response():
             nonlocal total_prompt_tokens, total_completion_tokens
 
             try:
-                for chunk in response:
+                for chunk in response:  # 使用同步 for 处理流式响应
                     if chunk.usage is not None:
                         # 如果能拿到 chunk.usage，直接使用它的值
                         total_prompt_tokens = chunk.usage.prompt_tokens
@@ -56,6 +61,7 @@ def proxy_openai():
                                 encoder.encode(choice.delta.content)
                             )
 
+                    # 构建流式响应块
                     chunk_data = ChatCompletionChunk(
                         id=chunk.id,
                         object=chunk.object,
@@ -95,16 +101,18 @@ def proxy_openai():
                 print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
                 print(f"Total Completion Tokens (手动计算): {total_completion_tokens}")
                 raise
-            return
+            except Exception as e:
+                print(f"Error in generate_response: {e}")
+                raise
 
-        return Response(generate_response(), content_type="text/event-stream")
+        return StreamingResponse(generate_response(), media_type="text/event-stream")
 
     except Exception as e:
         print(f"Error: {e}")
-        return Response("Internal Server Error", status=500)
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    import uvicorn
 
-
+    uvicorn.run(app, host="0.0.0.0", port=5000)
