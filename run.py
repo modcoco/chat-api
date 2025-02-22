@@ -13,6 +13,7 @@ import tiktoken
 
 load_dotenv()
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db_user = os.getenv("DB_USER", "default_user")
@@ -72,7 +73,7 @@ async def proxy_openai(request: Request):
         )
 
         # 生成流式响应
-        def generate_response():
+        async def generate_response():
             nonlocal total_prompt_tokens, total_completion_tokens
 
             try:
@@ -91,6 +92,13 @@ async def proxy_openai(request: Request):
                             total_completion_tokens += len(
                                 encoder.encode(choice.delta.content)
                             )
+
+                    # 检查客户端是否断开连接
+                    if await request.is_disconnected():  # 使用 await 调用异步方法
+                        print("客户端主动断开连接")
+                        print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
+                        print(f"Total Completion Tokens (手动计算): {total_completion_tokens}")
+                        return
 
                     # 构建流式响应块
                     chunk_data = ChatCompletionChunk(
@@ -127,15 +135,9 @@ async def proxy_openai(request: Request):
                         choice.finish_reason == "stop" for choice in chunk.choices
                     ):
                         yield "data: [DONE]\n\n".encode("utf-8")
-            except GeneratorExit:
-                print("用户主动中断了流式请求")
-                print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
-                print(f"Total Completion Tokens (手动计算): {total_completion_tokens}")
-                raise
             except Exception as e:
                 print(f"Error in generate_response: {e}")
                 raise
-
         return StreamingResponse(generate_response(), media_type="text/event-stream")
 
     except Exception as e:
