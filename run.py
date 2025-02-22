@@ -1,4 +1,6 @@
+import asyncio
 from contextlib import asynccontextmanager
+import datetime
 import os
 import time
 import json
@@ -84,9 +86,18 @@ async def proxy_openai(request: Request):
                         total_completion_tokens = chunk.usage.completion_tokens
                         print(f"Total Prompt Tokens: {total_prompt_tokens}")
                         print(f"Total Completion Tokens: {total_completion_tokens}")
+
+                        # 插入数据到数据库
+                        await insert_token_usage(
+                            app.state.db_pool,
+                            user_id=1,  # user_id 写死为 1
+                            model_id=1,  # model_id 写死为 1
+                            prompt_tokens=total_prompt_tokens,
+                            completion_tokens=total_completion_tokens,
+                        )
                         break
 
-                    # 如果没有 chunk.usage，手动计算 completion_tokens
+                    # 计算 completion tokens
                     for choice in chunk.choices:
                         if choice.delta.content:
                             total_completion_tokens += len(
@@ -97,8 +108,24 @@ async def proxy_openai(request: Request):
                     if await request.is_disconnected():  # 使用 await 调用异步方法
                         print("客户端主动断开连接")
                         print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
-                        print(f"Total Completion Tokens (手动计算): {total_completion_tokens}")
-                        return
+                        print(
+                            f"Total Completion Tokens (手动计算): {total_completion_tokens}"
+                        )
+
+                        try:
+                            print("数据库插入触发1")
+                            await insert_token_usage(
+                                app.state.db_pool,
+                                user_id=1,
+                                model_id=1,
+                                prompt_tokens=total_prompt_tokens,
+                                completion_tokens=total_completion_tokens,
+                            )
+                            print("数据库插入触发2")
+                        except Exception as db_error:
+                            print(f"数据库插入失败: {db_error}")
+                        finally:
+                            return  # 确保插入完成后才返回
 
                     # 构建流式响应块
                     chunk_data = ChatCompletionChunk(
@@ -138,6 +165,7 @@ async def proxy_openai(request: Request):
             except Exception as e:
                 print(f"Error in generate_response: {e}")
                 raise
+
         return StreamingResponse(generate_response(), media_type="text/event-stream")
 
     except Exception as e:
@@ -150,6 +178,40 @@ async def get_users():
     async with app.state.db_pool.acquire() as connection:
         result = await connection.fetch("SELECT * FROM models")
         return {"users": [dict(record) for record in result]}  # 将结果转换为字典
+
+
+async def insert_token_usage(
+    db_pool, user_id, model_id, prompt_tokens, completion_tokens
+):
+    """
+    插入 token 使用记录到数据库
+    """
+    retries = 3  # 重试次数
+    for attempt in range(retries):
+        try:
+            async with db_pool.acquire() as connection:
+                async with connection.transaction():  # 使用事务
+                    await connection.execute(
+                        """
+                        INSERT INTO user_models_token_usage 
+                        (user_id, model_id, prompt_tokens, completion_tokens, created)
+                        VALUES ($1, $2, $3, $4, $5)
+                        """,
+                        user_id,
+                        model_id,
+                        prompt_tokens,
+                        completion_tokens,
+                        datetime.datetime.fromtimestamp(time.time()),  # 当前时间戳
+                    )
+            print("数据插入成功")
+            break  # 插入成功，退出重试
+        except Exception as db_error:
+            if attempt == retries - 1:  # 最后一次重试仍失败
+                print(f"数据库插入失败，重试 {attempt + 1} 次后仍失败: {db_error}")
+                raise  # 抛出异常，由调用方处理
+            else:
+                print(f"数据库插入失败，正在重试 ({attempt + 1}/{retries}): {db_error}")
+                await asyncio.sleep(1)  # 等待 1 秒后重试
 
 
 if __name__ == "__main__":
