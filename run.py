@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 import time
 import json
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 import uuid
 import asyncpg
 from dotenv import load_dotenv
@@ -88,6 +88,47 @@ async def process_token_usage_queue(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# 客户端连接池
+client_pool: Dict[str, dict] = {}
+# 客户端超时时间（30 分钟）
+CLIENT_TIMEOUT = 30 * 60
+
+
+def get_client(base_url: str, api_key: str) -> OpenAI:
+    """
+    获取或创建客户端实例，并支持超时清理
+    """
+    global client_pool
+
+    cleanup_clients()
+
+    # 如果客户端已存在且未超时，则直接返回
+    if base_url in client_pool:
+        client_data = client_pool[base_url]
+        if time.time() - client_data["last_used"] <= CLIENT_TIMEOUT:
+            client_data["last_used"] = time.time()  # 更新最后使用时间
+            return client_data["client"]
+
+    # 如果客户端不存在或已超时，则创建新的客户端
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    client_pool[base_url] = {
+        "client": client,
+        "last_used": time.time(),  # 记录最后使用时间
+    }
+    return client
+
+
+def cleanup_clients():
+    """
+    清理超时的客户端
+    """
+    global client_pool
+    current_time = time.time()
+    for base_url in list(client_pool.keys()):
+        client_data = client_pool[base_url]
+        if current_time - client_data["last_used"] > CLIENT_TIMEOUT:
+            del client_pool[base_url]
+
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
@@ -145,8 +186,18 @@ async def proxy_openai(
             detail="The model cannot be found.",
         )
 
+    # Get active inference deployment
+    deployment_info = await get_deployment_info_by_api_key(api_key, db)
+    if deployment_info is None:
+        print("The inference deployment is down.")
+        raise HTTPException(
+            status_code=400,
+            detail="The inference deployment is down",
+        )
     try:
-        response = client.chat.completions.create(
+        deployment_url, models_api_key = deployment_info
+        client1 = get_client(deployment_url + "/v1", models_api_key)
+        response = client1.chat.completions.create(
             model=model_id,
             messages=messages,
             temperature=0,
@@ -732,6 +783,29 @@ async def get_model_id_by_api_key_and_model_name(
     # 如果找到匹配的结果，则返回 model_id，否则返回 None
     if result:
         return result["model_id"]
+    else:
+        return None
+
+
+async def get_deployment_info_by_api_key(
+    api_key: str, db: asyncpg.Pool
+) -> Optional[Tuple[str, str]]:
+    # 使用 JOIN 查询获取 deployment_url 和 models_api_key，明确指定每个表的 id 列
+    query = """
+    SELECT idp.deployment_url, idp.models_api_key
+    FROM inference_deployment idp
+    JOIN inference_model im ON idp.id = im.inference_id
+    JOIN inference_model_api_key imak ON im.id = imak.inference_model_id
+    WHERE imak.api_key = $1
+    AND imak.is_deleted = FALSE
+    """
+
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, api_key)
+
+    # 如果找到了匹配的结果，则返回 deployment_url 和 models_api_key，否则返回 None
+    if result:
+        return result["deployment_url"], result["models_api_key"]
     else:
         return None
 
