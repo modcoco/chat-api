@@ -1,17 +1,21 @@
 import asyncio
 from contextlib import asynccontextmanager
-import datetime
+from datetime import datetime
 import os
 import time
 import json
+from typing import List, Optional
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, Request, HTTPException
+from fastapi import Depends, FastAPI, Header, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
+
+from inference_deployment import create_inference_deployment, get_inference_deployments
+from models import InferenceDeployment, InferenceDeploymentCreate
 
 load_dotenv()
 
@@ -129,7 +133,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1, # api-key-id
+                        1,  # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "completed",
@@ -153,7 +157,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1, # api-key-id
+                        1,  # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "interrupted",
@@ -206,6 +210,58 @@ async def get_users():
     async with app.state.db_pool.acquire() as connection:
         result = await connection.fetch("SELECT * FROM models")
         return {"users": [dict(record) for record in result]}
+
+
+@app.post("/inference-deployment")
+async def create_deployment(
+    deployment: InferenceDeploymentCreate,
+    db: asyncpg.Pool = Depends(lambda: app.state.db_pool),
+):
+    async with db.acquire() as conn:
+        existing_deployment = await conn.fetchrow(
+            "SELECT * FROM inference_deployment WHERE inference_name = $1",
+            deployment.inference_name,
+        )
+        if existing_deployment:
+            raise HTTPException(
+                status_code=400, detail="Inference deployment already exists."
+            )
+
+        new_deployment = await create_inference_deployment(conn, deployment)
+        return new_deployment
+
+
+@app.get("/inference-deployment", response_model=List[InferenceDeployment])
+async def get_deployments(
+    inference_name: Optional[str] = None,
+    db: asyncpg.Pool = Depends(lambda: app.state.db_pool),
+):
+    async with db.acquire() as conn:
+        deployments = await get_inference_deployments(conn, inference_name)
+        if not deployments:
+            raise HTTPException(
+                status_code=404, detail="Inference deployments not found."
+            )
+        return deployments
+
+
+@app.delete("/inference-deployment/{id}", status_code=204)
+async def delete_deployment(
+    id: int,
+    db: asyncpg.Pool = Depends(lambda: app.state.db_pool),
+):
+    async with db.acquire() as conn:
+        existing_deployment = await conn.fetchrow(
+            "SELECT * FROM inference_deployment WHERE id = $1", id
+        )
+        if not existing_deployment:
+            raise HTTPException(
+                status_code=404, detail="Inference deployment not found."
+            )
+
+        await conn.execute("DELETE FROM inference_deployment WHERE id = $1", id)
+
+        return {"detail": "Inference deployment deleted successfully."}
 
 
 async def insert_token_usage(
