@@ -6,7 +6,7 @@ import time
 import json
 import asyncpg
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Header, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
@@ -86,10 +86,16 @@ encoder = tiktoken.get_encoding("cl100k_base")
 
 
 @app.post("/v1/chat/completions")
-async def proxy_openai(request: Request):
+async def proxy_openai(request: Request, authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication Fail",
+        )
+    api_key = authorization.split("Bearer ")[-1]
+    print(api_key)
     try:
         user_request = await request.json()
-
         # Init total_tokens
         messages = user_request.get("messages", [])
         prompt_text = " ".join([msg.get("content", "") for msg in messages])
