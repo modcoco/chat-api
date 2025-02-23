@@ -52,8 +52,7 @@ async def process_token_usage_queue(app: FastAPI):
 
         (
             completions_chunk_id,
-            user_id,
-            inference_id,
+            api_key_id,
             prompt_tokens,
             completion_tokens,
             type,
@@ -62,8 +61,7 @@ async def process_token_usage_queue(app: FastAPI):
             await insert_token_usage(
                 app.state.db_pool,
                 completions_chunk_id,
-                user_id,
-                inference_id,
+                api_key_id,
                 prompt_tokens,
                 completion_tokens,
                 type,
@@ -131,8 +129,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1,
-                        1,
+                        1, # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "completed",
@@ -156,8 +153,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1,
-                        1,
+                        1, # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "interrupted",
@@ -215,8 +211,7 @@ async def get_users():
 async def insert_token_usage(
     db_pool,
     completions_chunk_id,
-    user_id,
-    inference_id,
+    api_key_id,
     prompt_tokens,
     completion_tokens,
     type,
@@ -231,13 +226,12 @@ async def insert_token_usage(
                 async with connection.transaction():
                     await connection.execute(
                         """
-                        INSERT INTO user_inference_token_usage 
-                        (completions_chunk_id, user_id, inference_id, prompt_tokens, completion_tokens, type, created)
+                        INSERT INTO inference_model_api_key_token_usage 
+                        (completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
                         """,
                         completions_chunk_id,
-                        user_id,
-                        inference_id,
+                        api_key_id,
                         prompt_tokens,
                         completion_tokens,
                         type,
