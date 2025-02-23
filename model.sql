@@ -21,9 +21,9 @@ CREATE TABLE
         team_id INT, -- 属于那个用户组
         inference_id INT NOT NULL, -- 引用推理服务表的推理服务ID
         model_id VARCHAR(255) NOT NULL, -- inference_deployment的模型id，例如：/mnt/data/models/deepseek-ai_DeepSeek-R1
-        max_token_quota INT, -- 用户可使用该推理的最大 token 配额
-        max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额
-        max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额
+        max_token_quota INT, -- 用户可使用该推理的最大 token 配额, null代表无限
+        max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
+        max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         created TIMESTAMP NOT NULL, -- 创建时间
         updated TIMESTAMP NOT NULL, -- 更新时间
         FOREIGN KEY (inference_id) REFERENCES inference_deployment (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除用户推理服务关系
@@ -37,9 +37,9 @@ CREATE TABLE
         api_key_name VARCHAR(255) NOT NULL, -- 部署服务的名称（可能用于标识）
         inference_model_id INT NOT NULL, -- 引用 models 表的推理服务ID
         api_key VARCHAR(255) NOT NULL, -- 访问令牌内容
-        max_token_quota INT, -- 用户可使用该推理的最大 token 配额
-        max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额
-        max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额
+        max_token_quota INT, -- 用户可使用该推理的最大 token 配额, null代表无限
+        max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
+        max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         active_days INT, -- 有效时长
         created TIMESTAMP NOT NULL, -- 令牌创建时间
         last_used_at TIMESTAMP, -- 最后使用时间

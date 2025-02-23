@@ -118,7 +118,7 @@ async def proxy_openai(
             detail="Authentication Fail",
         )
 
-    # 检查api-key配额
+    # 检查api-key配额, todo: cache
     apikey_check_res = await check_api_key_usage(api_key, db, True)
     if apikey_check_res is not None:
         print("The usage is over the quota:", api_key, apikey_check_res)
@@ -127,15 +127,27 @@ async def proxy_openai(
             detail=apikey_check_res,
         )
 
-    try:
-        user_request = await request.json()
-        # Init total_tokens
-        messages = user_request.get("messages", [])
-        prompt_text = " ".join([msg.get("content", "") for msg in messages])
-        total_tokens = {"prompt": len(encoder.encode(prompt_text)), "completion": 0}
+    # 获取模型
+    user_request = await request.json()
+    # Init total_tokens
+    messages = user_request.get("messages", [])
+    model_name = user_request.get("model")
+    prompt_text = " ".join([msg.get("content", "") for msg in messages])
+    total_tokens = {"prompt": len(encoder.encode(prompt_text)), "completion": 0}
 
+    # Use Model
+    print(f"Use Model: {model_name}")
+    model_id = await get_model_id_by_api_key_and_model_name(api_key, model_name, db)
+    if model_id is None:
+        print("The model cannot be found.")
+        raise HTTPException(
+            status_code=400,
+            detail="The model cannot be found.",
+        )
+
+    try:
         response = client.chat.completions.create(
-            model="/mnt/data/models/deepseek-ai_DeepSeek-R1",
+            model=model_id,
             messages=messages,
             temperature=0,
             stream=True,
@@ -699,6 +711,29 @@ async def check_model_usage(
             return "Model's total tokens exceeded quota"
 
     return None
+
+
+async def get_model_id_by_api_key_and_model_name(
+    api_key: str, model_name: str, db: asyncpg.Pool
+) -> Optional[str]:
+    # 使用 JOIN 查询获取 model_id 并验证 model_name 是否匹配
+    query = """
+    SELECT im.model_id
+    FROM inference_model_api_key imak
+    JOIN inference_model im ON imak.inference_model_id = im.id
+    WHERE imak.api_key = $1
+    AND im.model_name = $2
+    AND imak.is_deleted = FALSE
+    """
+
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, api_key, model_name)
+
+    # 如果找到匹配的结果，则返回 model_id，否则返回 None
+    if result:
+        return result["model_id"]
+    else:
+        return None
 
 
 if __name__ == "__main__":
