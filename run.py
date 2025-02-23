@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
         max_size=db_max_size,
     )
     app.state.db_pool = pool
-    
+
     app.state.token_usage_queue = asyncio.Queue()
     asyncio.create_task(process_token_usage_queue(app))
 
@@ -50,14 +50,23 @@ async def process_token_usage_queue(app: FastAPI):
         if token_data is None:
             break
 
-        user_id, model_id, prompt_tokens, completion_tokens = token_data
+        (
+            completions_chunk_id,
+            user_id,
+            inference_id,
+            prompt_tokens,
+            completion_tokens,
+            type,
+        ) = token_data
         try:
             await insert_token_usage(
                 app.state.db_pool,
+                completions_chunk_id,
                 user_id,
-                model_id,
+                inference_id,
                 prompt_tokens,
                 completion_tokens,
+                type,
             )
         except Exception as e:
             print(f"数据库插入失败: {e}")
@@ -109,10 +118,12 @@ async def proxy_openai(request: Request):
 
                         await app.state.token_usage_queue.put(
                             (
+                                chunk.id,
                                 1,
                                 1,
                                 total_prompt_tokens,
                                 total_completion_tokens,
+                                "completed",
                             )
                         )
                         break
@@ -132,7 +143,14 @@ async def proxy_openai(request: Request):
                         )
 
                         await app.state.token_usage_queue.put(
-                            (1, 1, total_prompt_tokens, total_completion_tokens)
+                            (
+                                chunk.id,
+                                1,
+                                1,
+                                total_prompt_tokens,
+                                total_completion_tokens,
+                                "interrupted",
+                            )
                         )
 
                         return
@@ -190,7 +208,13 @@ async def get_users():
 
 
 async def insert_token_usage(
-    db_pool, user_id, model_id, prompt_tokens, completion_tokens
+    db_pool,
+    completions_chunk_id,
+    user_id,
+    inference_id,
+    prompt_tokens,
+    completion_tokens,
+    type,
 ):
     """
     插入 token 使用记录到数据库
@@ -202,14 +226,16 @@ async def insert_token_usage(
                 async with connection.transaction():
                     await connection.execute(
                         """
-                        INSERT INTO user_models_token_usage 
-                        (user_id, model_id, prompt_tokens, completion_tokens, created)
-                        VALUES ($1, $2, $3, $4, $5)
+                        INSERT INTO user_inference_token_usage 
+                        (completions_chunk_id, user_id, inference_id, prompt_tokens, completion_tokens, type, created)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         """,
+                        completions_chunk_id,
                         user_id,
-                        model_id,
+                        inference_id,
                         prompt_tokens,
                         completion_tokens,
+                        type,
                         datetime.datetime.fromtimestamp(time.time()),
                     )
             print("数据插入成功")
