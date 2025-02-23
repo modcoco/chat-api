@@ -9,6 +9,7 @@ import asyncpg
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, Request, HTTPException
 from fastapi.responses import StreamingResponse
+import httpx
 from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
@@ -262,6 +263,46 @@ async def delete_deployment(
         await conn.execute("DELETE FROM inference_deployment WHERE id = $1", id)
 
         return {"detail": "Inference deployment deleted successfully."}
+
+@app.get("/inference-deployment/{id}/models", response_model=List[dict])
+async def get_model_ids(id: int, db: asyncpg.Pool = Depends(lambda: app.state.db_pool)):
+    async with db.acquire() as conn:
+        deployment = await conn.fetchrow(
+            "SELECT deployment_url FROM inference_deployment WHERE id = $1", id
+        )
+
+        if not deployment:
+            raise HTTPException(
+                status_code=404, detail="Inference deployment not found."
+            )
+
+        deployment_url = deployment["deployment_url"]
+        url_with_models = f"{deployment_url}/v1/models"
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url_with_models)
+                response.raise_for_status()
+
+                data = response.json()
+
+                if "data" in data:
+                    filtered_data = [
+                        {
+                            "id": item.get("id"),
+                            "created": item.get("created"),
+                            "owned_by": item.get("owned_by"),
+                            "max_model_len": item.get("max_model_len"),
+                        }
+                        for item in data["data"]
+                    ]
+                    return filtered_data
+                else:
+                    return []
+            except httpx.RequestError as e:
+                return []
+            except httpx.HTTPStatusError as e:
+                return []
 
 
 async def insert_token_usage(
