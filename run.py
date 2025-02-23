@@ -90,114 +90,113 @@ async def proxy_openai(request: Request):
     try:
         user_request = await request.json()
 
-        total_prompt_tokens = 0
-        total_completion_tokens = 0
-
+        # Init total_tokens
         messages = user_request.get("messages", [])
         prompt_text = " ".join([msg.get("content", "") for msg in messages])
-        total_prompt_tokens = len(encoder.encode(prompt_text))
+        total_tokens = {"prompt": len(encoder.encode(prompt_text)), "completion": 0}
 
         response = client.chat.completions.create(
             model="/mnt/data/models/deepseek-ai_DeepSeek-R1",
             messages=messages,
             temperature=0,
-            stream=True,  # 确保 stream=True
+            stream=True,
             stream_options={"include_usage": True},
         )
 
-        async def generate_response():
-            nonlocal total_prompt_tokens, total_completion_tokens
-
-            try:
-                for chunk in response:
-                    if chunk.usage is not None:
-                        total_prompt_tokens = chunk.usage.prompt_tokens
-                        total_completion_tokens = chunk.usage.completion_tokens
-                        print(f"Total Prompt Tokens: {total_prompt_tokens}")
-                        print(f"Total Completion Tokens: {total_completion_tokens}")
-
-                        await app.state.token_usage_queue.put(
-                            (
-                                chunk.id,
-                                1,
-                                1,
-                                total_prompt_tokens,
-                                total_completion_tokens,
-                                "completed",
-                            )
-                        )
-                        break
-
-                    # 计算 completion tokens
-                    for choice in chunk.choices:
-                        if choice.delta.content:
-                            total_completion_tokens += len(
-                                encoder.encode(choice.delta.content)
-                            )
-
-                    if await request.is_disconnected():
-                        print("客户端主动断开连接")
-                        print(f"Total Prompt Tokens (手动计算): {total_prompt_tokens}")
-                        print(
-                            f"Total Completion Tokens (手动计算): {total_completion_tokens}"
-                        )
-
-                        await app.state.token_usage_queue.put(
-                            (
-                                chunk.id,
-                                1,
-                                1,
-                                total_prompt_tokens,
-                                total_completion_tokens,
-                                "interrupted",
-                            )
-                        )
-
-                        return
-
-                    chunk_data = ChatCompletionChunk(
-                        id=chunk.id,
-                        object=chunk.object,
-                        created=int(time.time()),
-                        model=chunk.model,
-                        choices=[
-                            Choice(
-                                index=choice.index,
-                                delta=ChoiceDelta(
-                                    content=choice.delta.content,
-                                    function_call=choice.delta.function_call,
-                                    refusal=choice.delta.refusal,
-                                    role=choice.delta.role,
-                                    tool_calls=choice.delta.tool_calls,
-                                ),
-                                finish_reason=choice.finish_reason,
-                                stop_reason=getattr(choice, "stop_reason", None),
-                            )
-                            for choice in chunk.choices
-                        ],
-                        usage=chunk.usage,
-                    )
-
-                    chunk_json = json.dumps(
-                        chunk_data.to_dict(),
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                    )
-                    yield f"data: {chunk_json}\n\n".encode("utf-8")
-
-                    if chunk.choices and any(
-                        choice.finish_reason == "stop" for choice in chunk.choices
-                    ):
-                        yield "data: [DONE]\n\n".encode("utf-8")
-            except Exception as e:
-                print(f"Error in generate_response: {e}")
-                raise
-
-        return StreamingResponse(generate_response(), media_type="text/event-stream")
+        return StreamingResponse(
+            generate_response(request, response, app, encoder, total_tokens),
+            media_type="text/event-stream",
+        )
 
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+async def generate_response(request, response, app, encoder, total_tokens):
+    try:
+        for chunk in response:
+            if chunk.usage is not None:
+                total_tokens["prompt"] = chunk.usage.prompt_tokens
+                total_tokens["completion"] = chunk.usage.completion_tokens
+                print(f"Total Prompt Tokens: {total_tokens['prompt']}")
+                print(f"Total Completion Tokens: {total_tokens['completion']}")
+
+                await app.state.token_usage_queue.put(
+                    (
+                        chunk.id,
+                        1,
+                        1,
+                        total_tokens["prompt"],
+                        total_tokens["completion"],
+                        "completed",
+                    )
+                )
+                break
+
+            for choice in chunk.choices:
+                if choice.delta.content:
+                    total_tokens["completion"] += len(
+                        encoder.encode(choice.delta.content)
+                    )
+
+            if await request.is_disconnected():
+                print("客户端主动断开连接")
+                print(f"Total Prompt Tokens (手动计算): {total_tokens['prompt']}")
+                print(
+                    f"Total Completion Tokens (手动计算): {total_tokens['completion']}"
+                )
+
+                await app.state.token_usage_queue.put(
+                    (
+                        chunk.id,
+                        1,
+                        1,
+                        total_tokens["prompt"],
+                        total_tokens["completion"],
+                        "interrupted",
+                    )
+                )
+
+                return
+
+            chunk_data = ChatCompletionChunk(
+                id=chunk.id,
+                object=chunk.object,
+                created=int(time.time()),
+                model=chunk.model,
+                choices=[
+                    Choice(
+                        index=choice.index,
+                        delta=ChoiceDelta(
+                            content=choice.delta.content,
+                            function_call=choice.delta.function_call,
+                            refusal=choice.delta.refusal,
+                            role=choice.delta.role,
+                            tool_calls=choice.delta.tool_calls,
+                        ),
+                        finish_reason=choice.finish_reason,
+                        stop_reason=getattr(choice, "stop_reason", None),
+                    )
+                    for choice in chunk.choices
+                ],
+                usage=chunk.usage,
+            )
+
+            chunk_json = json.dumps(
+                chunk_data.to_dict(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            yield f"data: {chunk_json}\n\n".encode("utf-8")
+
+            if chunk.choices and any(
+                choice.finish_reason == "stop" for choice in chunk.choices
+            ):
+                yield "data: [DONE]\n\n".encode("utf-8")
+    except Exception as e:
+        print(f"Error in generate_response: {e}")
+        raise
 
 
 @app.get("/v1/models")
