@@ -98,14 +98,25 @@ encoder = tiktoken.get_encoding("cl100k_base")
 
 
 @app.post("/v1/chat/completions")
-async def proxy_openai(request: Request, authorization: str = Header(None)):
+async def proxy_openai(
+    request: Request,
+    authorization: str = Header(None),
+    db: asyncpg.Pool = Depends(lambda: app.state.db_pool),
+):
     if not authorization:
         raise HTTPException(
             status_code=401,
             detail="Authentication Fail",
         )
     api_key = authorization.split("Bearer ")[-1]
-    print(api_key)
+    print(f"Received API Key: {api_key}")
+
+    api_key_id = await get_api_key_id_by_key(api_key, db)
+    if api_key_id is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication Fail",
+        )
     try:
         user_request = await request.json()
         # Init total_tokens
@@ -122,7 +133,9 @@ async def proxy_openai(request: Request, authorization: str = Header(None)):
         )
 
         return StreamingResponse(
-            generate_response(request, response, app, encoder, total_tokens),
+            generate_response(
+                request, response, app, encoder, total_tokens, api_key_id
+            ),
             media_type="text/event-stream",
         )
 
@@ -131,7 +144,7 @@ async def proxy_openai(request: Request, authorization: str = Header(None)):
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-async def generate_response(request, response, app, encoder, total_tokens):
+async def generate_response(request, response, app, encoder, total_tokens, api_key_id):
     try:
         for chunk in response:
             if chunk.usage is not None:
@@ -143,7 +156,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1,  # api-key-id
+                        api_key_id,  # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "completed",
@@ -167,7 +180,7 @@ async def generate_response(request, response, app, encoder, total_tokens):
                 await app.state.token_usage_queue.put(
                     (
                         chunk.id,
-                        1,  # api-key-id
+                        api_key_id,  # api-key-id
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "interrupted",
@@ -500,14 +513,14 @@ async def insert_token_usage(
                         """
                         INSERT INTO inference_model_api_key_token_usage 
                         (completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        VALUES ($1, $2, $3, $4, $5, $6)
                         """,
                         completions_chunk_id,
                         api_key_id,
                         prompt_tokens,
                         completion_tokens,
                         type,
-                        datetime.datetime.fromtimestamp(time.time()),
+                        datetime.fromtimestamp(time.time()),
                     )
             print("数据插入成功")
             break
@@ -518,6 +531,19 @@ async def insert_token_usage(
             else:
                 print(f"数据库插入失败，正在重试 ({attempt + 1}/{retries}): {db_error}")
                 await asyncio.sleep(1)
+
+
+async def get_api_key_id_by_key(api_key: str, db: asyncpg.Pool) -> Optional[int]:
+    query = """
+    SELECT id FROM inference_model_api_key WHERE api_key = $1 AND is_deleted = FALSE;
+    """
+
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, api_key)
+
+    if result:
+        return result["id"]
+    return None
 
 
 if __name__ == "__main__":
