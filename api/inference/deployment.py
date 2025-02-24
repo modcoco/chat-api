@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Request
 import httpx
@@ -46,7 +47,7 @@ async def get_deployments(
         return deployments
 
 
-@router.delete("/deployment/{id}", status_code=204)
+@router.patch("/deployment/{id}", status_code=204)
 async def delete_deployment(
     request: Request,
     id: int,
@@ -54,16 +55,27 @@ async def delete_deployment(
     db = request.app.state.db_pool
     async with db.acquire() as conn:
         existing_deployment = await conn.fetchrow(
-            "SELECT * FROM inference_deployment WHERE id = $1", id
+            "SELECT * FROM inference_deployment WHERE id = $1 AND is_deleted = FALSE",
+            id,
         )
+
         if not existing_deployment:
             raise HTTPException(
-                status_code=404, detail="Inference deployment not found."
+                status_code=404,
+                detail="Inference deployment not found or already deleted.",
             )
 
-        await conn.execute("DELETE FROM inference_deployment WHERE id = $1", id)
+        await conn.execute(
+            """
+            UPDATE inference_deployment
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            WHERE id = $2
+            """,
+            datetime.now(),
+            id,
+        )
 
-        return {"detail": "Inference deployment deleted successfully."}
+    return {"detail": "Inference deployment marked as deleted successfully."}
 
 
 @router.get("/deployment/{id}/models", response_model=List[dict])
@@ -71,7 +83,8 @@ async def get_model_ids(request: Request, id: int):
     db = request.app.state.db_pool
     async with db.acquire() as conn:
         deployment = await conn.fetchrow(
-            "SELECT deployment_url FROM inference_deployment WHERE id = $1", id
+            "SELECT deployment_url FROM inference_deployment WHERE id = $1 AND is_deleted = FALSE",
+            id,
         )
 
         if not deployment:

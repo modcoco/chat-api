@@ -13,7 +13,7 @@ async def get_inference_deployments(
     query = """
     SELECT id, inference_name, type, deployment_url, models_api_key, 
            TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at, status  -- 格式化 created_at 字段为字符串
-    FROM inference_deployment
+    FROM inference_deployment where is_deleted = FALSE
     """
     if inference_name:
         query += " WHERE inference_name = $1"
