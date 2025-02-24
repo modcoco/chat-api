@@ -1,6 +1,7 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+import asyncpg
 import httpx
 
 from models import InferenceDeployment, InferenceDeploymentCreate
@@ -63,3 +64,26 @@ async def create_inference_deployment(conn, deployment: InferenceDeploymentCreat
         status,  # 根据检查的结果设置 status
     )
     return dict(result)
+
+
+async def get_deployment_info_by_api_key(
+    api_key: str, db: asyncpg.Pool
+) -> Optional[Tuple[str, str]]:
+    # 使用 JOIN 查询获取 deployment_url 和 models_api_key，明确指定每个表的 id 列
+    query = """
+    SELECT idp.deployment_url, idp.models_api_key
+    FROM inference_deployment idp
+    JOIN inference_model im ON idp.id = im.inference_id
+    JOIN inference_model_api_key imak ON im.id = imak.inference_model_id
+    WHERE imak.api_key = $1
+    AND imak.is_deleted = FALSE
+    """
+
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, api_key)
+
+    # 如果找到了匹配的结果，则返回 deployment_url 和 models_api_key，否则返回 None
+    if result:
+        return result["deployment_url"], result["models_api_key"]
+    else:
+        return None

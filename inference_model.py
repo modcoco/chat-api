@@ -1,4 +1,7 @@
 from datetime import datetime
+from typing import Optional
+
+import asyncpg
 from models import InferenceModelCreate
 
 
@@ -38,3 +41,26 @@ async def create_inference_model(conn, model: InferenceModelCreate):
     result_dict = {k: v for k, v in result_dict.items() if v is not None}
 
     return result_dict
+
+
+async def get_model_id_by_api_key_and_model_name(
+    api_key: str, model_name: str, db: asyncpg.Pool
+) -> Optional[str]:
+    # 使用 JOIN 查询获取 model_id 并验证 model_name 是否匹配
+    query = """
+    SELECT im.model_id
+    FROM inference_model_api_key imak
+    JOIN inference_model im ON imak.inference_model_id = im.id
+    WHERE imak.api_key = $1
+    AND im.model_name = $2
+    AND imak.is_deleted = FALSE
+    """
+
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, api_key, model_name)
+
+    # 如果找到匹配的结果，则返回 model_id，否则返回 None
+    if result:
+        return result["model_id"]
+    else:
+        return None
