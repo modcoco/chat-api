@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 import time
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional
 import uuid
 import asyncpg
 from dotenv import load_dotenv
@@ -12,7 +12,6 @@ from fastapi import Depends, FastAPI, Header, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from grpc import Status
 import httpx
-from openai import OpenAI
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
@@ -28,6 +27,8 @@ from app.inference_model import (
     get_model_id_by_api_key_and_model_name,
 )
 from app.inference_usage import check_api_key_usage, insert_token_usage
+from app.openai_client import get_client
+from app.queue import process_token_usage_queue
 from models import (
     InferenceDeployment,
     InferenceDeploymentCreate,
@@ -37,7 +38,6 @@ from models import (
 )
 
 load_dotenv()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,82 +67,7 @@ async def lifespan(app: FastAPI):
     print("Closing database connection pool...")
 
 
-async def process_token_usage_queue(app: FastAPI):
-    while True:
-        token_data = await app.state.token_usage_queue.get()  # 获取队列中的数据
-        if token_data is None:
-            break
-
-        (
-            completions_chunk_id,
-            api_key_id,
-            prompt_tokens,
-            completion_tokens,
-            type,
-        ) = token_data
-        try:
-            await insert_token_usage(
-                app.state.db_pool,
-                completions_chunk_id,
-                api_key_id,
-                prompt_tokens,
-                completion_tokens,
-                type,
-            )
-        except Exception as e:
-            print(f"数据库插入失败: {e}")
-        finally:
-            app.state.token_usage_queue.task_done()  # 标记任务完成
-
-
 app = FastAPI(lifespan=lifespan)
-
-# 客户端连接池
-client_pool: Dict[str, dict] = {}
-# 客户端超时时间（30 分钟）
-CLIENT_TIMEOUT = 30 * 60
-
-
-def get_client(base_url: str, api_key: str) -> OpenAI:
-    """
-    获取或创建客户端实例，并支持超时清理
-    """
-    global client_pool
-
-    cleanup_clients()
-
-    # 如果客户端已存在且未超时，则直接返回
-    if base_url in client_pool:
-        client_data = client_pool[base_url]
-        if time.time() - client_data["last_used"] <= CLIENT_TIMEOUT:
-            client_data["last_used"] = time.time()  # 更新最后使用时间
-            return client_data["client"]
-
-    # 如果客户端不存在或已超时，则创建新的客户端
-    client = OpenAI(base_url=base_url, api_key=api_key)
-    client_pool[base_url] = {
-        "client": client,
-        "last_used": time.time(),  # 记录最后使用时间
-    }
-    return client
-
-
-def cleanup_clients():
-    """
-    清理超时的客户端
-    """
-    global client_pool
-    current_time = time.time()
-    for base_url in list(client_pool.keys()):
-        client_data = client_pool[base_url]
-        if current_time - client_data["last_used"] > CLIENT_TIMEOUT:
-            del client_pool[base_url]
-
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="token-abc123",
-)
 
 encoder = tiktoken.get_encoding("cl100k_base")
 
