@@ -32,7 +32,7 @@ async def check_api_key_usage(
     SELECT SUM(prompt_tokens) AS total_prompt_tokens, SUM(completion_tokens) AS total_completion_tokens
     FROM inference_model_api_key_token_usage
     WHERE api_key_id = (SELECT id FROM inference_model_api_key WHERE api_key = $1) 
-    AND created <= $2;  -- 可选：限制到某个时间范围（例如当前时间前）
+    AND created_at <= $2;  -- 可选：限制到某个时间范围（例如当前时间前）
     """
 
     async with db.acquire() as conn:
@@ -117,7 +117,7 @@ async def check_model_usage(
     SELECT SUM(prompt_tokens) AS total_prompt_tokens, SUM(completion_tokens) AS total_completion_tokens
     FROM inference_model_api_key_token_usage
     WHERE api_key_id = (SELECT id FROM inference_model_api_key WHERE api_key = $1)
-    AND created <= $2;
+    AND created_at <= $2;
     """
 
     async with db.acquire() as conn:
@@ -169,7 +169,7 @@ async def insert_token_usage(
                     await connection.execute(
                         """
                         INSERT INTO inference_model_api_key_token_usage 
-                        (completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created)
+                        (completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created_at)
                         VALUES ($1, $2, $3, $4, $5, $6)
                         """,
                         completions_chunk_id,

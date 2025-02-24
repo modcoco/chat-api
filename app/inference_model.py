@@ -10,11 +10,11 @@ async def create_inference_model(conn, model: InferenceModelCreate):
     INSERT INTO inference_model (
         model_name, visibility, inference_id, 
         model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
-        created, updated
+        created_at, updated_at
     ) 
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
     RETURNING id, model_name, visibility, inference_id, model_id, 
-              max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created, updated;
+              max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created_at, updated_at;
     """
 
     current_time = datetime.now()
@@ -28,13 +28,13 @@ async def create_inference_model(conn, model: InferenceModelCreate):
         model.max_token_quota,
         model.max_prompt_tokens_quota,
         model.max_completion_tokens_quota,
-        current_time,  # created 字段
-        current_time,  # updated 字段
+        current_time,  # created_at 字段
+        current_time,  # updated_at 字段
     )
 
     result_dict = dict(result)
-    result_dict["created"] = result_dict["created"].isoformat()
-    result_dict["updated"] = result_dict["updated"].isoformat()
+    result_dict["created_at"] = result_dict["created_at"].isoformat()
+    result_dict["updated_at"] = result_dict["updated_at"].isoformat()
 
     result_dict = {k: v for k, v in result_dict.items() if v is not None}
 

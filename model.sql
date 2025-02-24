@@ -8,7 +8,10 @@ CREATE TABLE
         type VARCHAR(50) NOT NULL, -- 部署服务的类型（如 Completions API, Ollama）
         deployment_url VARCHAR(255) NOT NULL, -- 推理服务部署的 URL
         models_api_key VARCHAR(255), -- 推理服务访问私有令牌
-        created TIMESTAMP NOT NULL, -- 部署服务的创建时间
+        created_at TIMESTAMP NOT NULL, -- 部署服务的创建时间
+        updated_at TIMESTAMP, -- 更新时间
+        deleted_at TIMESTAMP, -- 删除时间
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE, -- 是否被删除（默认未删除）
         status VARCHAR(50) NOT NULL -- 部署服务的状态（如 active, inactive, maintenance）
     );
 
@@ -23,8 +26,10 @@ CREATE TABLE
         max_token_quota INT, -- 用户可使用该推理的最大 token 配额, null代表无限
         max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
-        created TIMESTAMP NOT NULL, -- 创建时间
-        updated TIMESTAMP NOT NULL, -- 更新时间
+        created_at TIMESTAMP NOT NULL, -- 创建时间
+        updated_at TIMESTAMP, -- 更新时间
+        deleted_at TIMESTAMP, -- 删除时间
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE, -- 是否被删除（默认未删除）
         FOREIGN KEY (inference_id) REFERENCES inference_deployment (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除用户推理服务关系
     );
 
@@ -39,9 +44,10 @@ CREATE TABLE
         max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         active_days INT, -- 有效时长
-        created TIMESTAMP NOT NULL, -- 令牌创建时间
+        created_at TIMESTAMP NOT NULL, -- 令牌创建时间
         last_used_at TIMESTAMP, -- 最后使用时间
         expires_at TIMESTAMP, -- 令牌过期时间（可为空，表示无过期）
+        deleted_at TIMESTAMP, -- 删除时间
         is_deleted BOOLEAN NOT NULL DEFAULT FALSE, -- 是否被删除（默认未删除）
         FOREIGN KEY (inference_model_id) REFERENCES inference_model (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除令牌
     );
@@ -55,6 +61,6 @@ CREATE TABLE
         prompt_tokens INT NOT NULL, -- 输入的 token 数量
         completion_tokens INT NOT NULL, -- 输出的 token 数量
         type VARCHAR(50), -- 统计类型（会话全部完成completed, 会话被打断interrupted）
-        created TIMESTAMP NOT NULL, -- 记录创建时间
+        created_at TIMESTAMP NOT NULL, -- 记录创建时间
         FOREIGN KEY (api_key_id) REFERENCES inference_model_api_key (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除记录
     );

@@ -22,7 +22,7 @@ class InferenceDeployment(BaseModel):
     type: str
     deployment_url: str
     models_api_key: Optional[str]
-    created: str
+    created_at: str
     status: str
 
 
@@ -54,7 +54,7 @@ class InferenceModelApiKeyResponse(BaseModel):
     max_prompt_tokens_quota: Optional[int] = None
     max_completion_tokens_quota: Optional[int] = None
     active_days: Optional[int] = None
-    created: str
+    created_at: str
     last_used_at: Optional[str] = None  # 将last_used_at字段改为Optional[str]
     expires_at: Optional[str] = None
     is_deleted: bool

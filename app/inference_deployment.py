@@ -12,7 +12,7 @@ async def get_inference_deployments(
 ) -> List[InferenceDeployment]:
     query = """
     SELECT id, inference_name, type, deployment_url, models_api_key, 
-           TO_CHAR(created, 'YYYY-MM-DD"T"HH24:MI:SS') AS created, status  -- 格式化 created 字段为字符串
+           TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at, status  -- 格式化 created_at 字段为字符串
     FROM inference_deployment
     """
     if inference_name:
@@ -50,9 +50,9 @@ async def create_inference_deployment(conn, deployment: InferenceDeploymentCreat
             status = "inactive"
 
     query = """
-    INSERT INTO inference_deployment (inference_name, type, deployment_url, models_api_key, created, status)
+    INSERT INTO inference_deployment (inference_name, type, deployment_url, models_api_key, created_at, status)
     VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING id, inference_name, type, deployment_url, models_api_key, created, status;
+    RETURNING id, inference_name, type, deployment_url, models_api_key, created_at, status;
     """
     result = await conn.fetchrow(
         query,
