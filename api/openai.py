@@ -76,8 +76,8 @@ async def proxy_openai(request: Request, authorization: str = Header(None)):
         deployment_url, models_api_key = deployment_info
 
         print(deployment_info)
-        client1 = get_client(deployment_url + "/v1", models_api_key)
-        response = client1.chat.completions.create(
+        client = get_client(deployment_url + "/v1", models_api_key)
+        response = client.chat.completions.create(
             model=model_id,
             messages=messages,
             temperature=0,
