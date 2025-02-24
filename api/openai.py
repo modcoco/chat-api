@@ -12,12 +12,17 @@ from app.openai_client import get_client
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 
+from protocol import ChatCompletionRequest
+
 router = APIRouter()
 encoder = tiktoken.get_encoding("cl100k_base")
 
 
+# https://github.com/vllm-project/vllm/blob/f90a37559315defd369441c4d2461989a10b9fc1/vllm/entrypoints/openai/api_server.py#L399
 @router.post("/v1/chat/completions")
-async def proxy_openai(request: Request, authorization: str = Header(None)):
+async def proxy_openai(
+    request: Request, body: ChatCompletionRequest, authorization: str = Header(None)
+):
     db = request.app.state.db_pool
     if not authorization:
         raise HTTPException(
@@ -77,12 +82,17 @@ async def proxy_openai(request: Request, authorization: str = Header(None)):
 
         print(deployment_info)
         client = get_client(deployment_url + "/v1", models_api_key)
+        body.model = model_id
+        body.temperature = 0
+        body.stream = True
+        body.stream_options = {"include_usage": True}
         response = client.chat.completions.create(
-            model=model_id,
-            messages=messages,
-            temperature=0,
-            stream=True,
-            stream_options={"include_usage": True},
+            # model=model_id,
+            # messages=messages,
+            # temperature=0,
+            # stream=True,
+            # stream_options={"include_usage": True},
+            **body.model_dump(),
         )
 
         return StreamingResponse(
