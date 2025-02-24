@@ -53,7 +53,7 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
 
 curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer sk-3fb394eed1bb4a8199062ff065d0a51c" \
+        -H "Authorization: Bearer sk-6b45875868f548afbfbbf83b6982c547" \
         --data '{
                 "model": "deepseek-r1-671b",
                 "stream": true,

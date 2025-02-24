@@ -29,8 +29,6 @@ class InferenceDeployment(BaseModel):
 class InferenceModelCreate(BaseModel):
     model_name: str
     visibility: str
-    user_id: Optional[int] = None
-    team_id: Optional[int] = None
     inference_id: int
     model_id: str
     max_token_quota: Optional[int] = None
@@ -39,7 +37,6 @@ class InferenceModelCreate(BaseModel):
 
 
 class InferenceModelApiKeyCreate(BaseModel):
-    user_id: int
     inference_model_id: int
     api_key_name: str
     max_token_quota: int = None
@@ -50,7 +47,6 @@ class InferenceModelApiKeyCreate(BaseModel):
 
 class InferenceModelApiKeyResponse(BaseModel):
     id: int
-    user_id: int
     api_key_name: str
     inference_model_id: int
     api_key: str

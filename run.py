@@ -198,6 +198,8 @@ async def proxy_openai(
         )
     try:
         deployment_url, models_api_key = deployment_info
+
+        print(deployment_info)
         client1 = get_client(deployment_url + "/v1", models_api_key)
         response = client1.chat.completions.create(
             model=model_id,
@@ -423,8 +425,6 @@ async def get_all_inference_services(
         im.id,
         im.model_name,
         im.visibility,
-        im.user_id,
-        im.team_id,
         im.inference_id,
         im.model_id,
         im.max_token_quota,
@@ -445,7 +445,7 @@ async def get_all_inference_services(
 async def delete_inference_model(
     id: int, db: asyncpg.Pool = Depends(lambda: app.state.db_pool)
 ):
-    query = "DELETE FROM inference_model WHERE id = $1 RETURNING id, model_name, visibility, user_id, team_id, inference_id, model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created, updated;"
+    query = "DELETE FROM inference_model WHERE id = $1 RETURNING id, model_name, visibility, inference_id, model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created, updated;"
 
     async with db.acquire() as conn:
         result = await conn.fetchrow(query, id)
@@ -473,12 +473,12 @@ async def create_inference_model_api_key(
 
     query = """
     INSERT INTO inference_model_api_key (
-        user_id, api_key_name, inference_model_id, api_key, 
+        api_key_name, inference_model_id, api_key, 
         max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
         created, expires_at,active_days
     ) 
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
-    RETURNING id, user_id, api_key_name, inference_model_id, api_key, 
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+    RETURNING id, api_key_name, inference_model_id, api_key, 
               max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
               created, expires_at, active_days, is_deleted;
     """
@@ -486,7 +486,6 @@ async def create_inference_model_api_key(
     async with db.acquire() as conn:
         result = await conn.fetchrow(
             query,
-            api_key_data.user_id,
             api_key_data.api_key_name,
             api_key_data.inference_model_id,
             api_key,
@@ -506,7 +505,7 @@ async def get_inference_model_api_keys(
     db: asyncpg.Pool = Depends(lambda: app.state.db_pool),
 ):
     query = """
-    SELECT id, user_id, api_key_name, inference_model_id, api_key, 
+    SELECT id, api_key_name, inference_model_id, api_key, 
            max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota,
            active_days, created, last_used_at, expires_at, is_deleted
     FROM inference_model_api_key
@@ -519,7 +518,6 @@ async def get_inference_model_api_keys(
     return [
         {
             "id": row["id"],
-            "user_id": row["user_id"],
             "api_key_name": row["api_key_name"],
             "inference_model_id": row["inference_model_id"],
             "api_key": row["api_key"],

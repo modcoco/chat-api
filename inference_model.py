@@ -8,12 +8,12 @@ from models import InferenceModelCreate
 async def create_inference_model(conn, model: InferenceModelCreate):
     query = """
     INSERT INTO inference_model (
-        model_name, visibility, user_id, team_id, inference_id, 
+        model_name, visibility, inference_id, 
         model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
         created, updated
     ) 
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
-    RETURNING id, model_name, visibility, user_id, team_id, inference_id, model_id, 
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+    RETURNING id, model_name, visibility, inference_id, model_id, 
               max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created, updated;
     """
 
@@ -23,8 +23,6 @@ async def create_inference_model(conn, model: InferenceModelCreate):
         query,
         model.model_name,
         model.visibility,
-        model.user_id,
-        model.team_id,
         model.inference_id,
         model.model_id,
         model.max_token_quota,

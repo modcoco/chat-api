@@ -60,8 +60,8 @@ async def create_inference_deployment(conn, deployment: InferenceDeploymentCreat
         deployment.type,
         deployment.deployment_url,
         deployment.models_api_key,
-        datetime.now(),  # 自动填充 created 字段
-        status,  # 根据检查的结果设置 status
+        datetime.now(),
+        status,
     )
     return dict(result)
 
@@ -84,6 +84,10 @@ async def get_deployment_info_by_api_key(
 
     # 如果找到了匹配的结果，则返回 deployment_url 和 models_api_key，否则返回 None
     if result:
-        return result["deployment_url"], result["models_api_key"]
+        deployment_url = result["deployment_url"]
+        models_api_key = result["models_api_key"]
+        if models_api_key is None:
+            models_api_key = "please_set_models_api_key"
+        return deployment_url, models_api_key
     else:
         return None

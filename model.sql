@@ -1,5 +1,6 @@
--- 用户部署一个推理服务，向对外提供该推理服务。把已有的推理服务新建一个代理服务，每个代理服务代理已经部署的推理服务的某个模型，每个代理服务可以生成很多api-key可以根据这些key设置配额和监控
--- 运行推理接口的服务，一个服务可能有多个模型，但是有一个key
+-- 用户部署一个推理服务，向对外提供该推理服务。
+-- 把已有的推理服务新建一个代理服务，每个代理服务代理已经部署的推理服务的某个模型，每个代理服务可以生成很多api-key可以根据这些key设置配额和监控
+-- 运行推理接口的服务，一个服务可能有多个模型
 CREATE TABLE
     inference_deployment (
         id SERIAL PRIMARY KEY, -- 部署服务的唯一标识符
@@ -17,8 +18,6 @@ CREATE TABLE
         id SERIAL PRIMARY KEY, -- 唯一标识符
         model_name VARCHAR(255) NOT NULL, -- 模型名称:deepseek-r1-671b
         visibility VARCHAR(50) NOT NULL, -- 公有public,私有private
-        user_id INT, -- 属于那个用户
-        team_id INT, -- 属于那个用户组
         inference_id INT NOT NULL, -- 引用推理服务表的推理服务ID
         model_id VARCHAR(255) NOT NULL, -- inference_deployment的模型id，例如：/mnt/data/models/deepseek-ai_DeepSeek-R1
         max_token_quota INT, -- 用户可使用该推理的最大 token 配额, null代表无限
@@ -33,10 +32,9 @@ CREATE TABLE
 CREATE TABLE
     inference_model_api_key (
         id SERIAL PRIMARY KEY, -- 唯一标识符
-        user_id INT NOT NULL, -- 为哪个用户创建的api-key
         api_key_name VARCHAR(255) NOT NULL, -- 部署服务的名称（可能用于标识）
         inference_model_id INT NOT NULL, -- 引用 models 表的推理服务ID
-        api_key VARCHAR(255) NOT NULL, -- 访问令牌内容
+        api_key VARCHAR(255) NOT NULL UNIQUE, -- 访问令牌内容
         max_token_quota INT, -- 用户可使用该推理的最大 token 配额, null代表无限
         max_prompt_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
         max_completion_tokens_quota INT, -- 用户可使用该推理服务的最大 token 配额, null代表无限
