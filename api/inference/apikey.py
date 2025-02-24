@@ -10,7 +10,7 @@ from models import InferenceModelApiKeyCreate, InferenceModelApiKeyResponse
 router = APIRouter()
 
 
-@router.post("/api-key", response_model=dict)
+@router.post("/apikey", response_model=dict)
 async def create_inference_model_api_key(
     request: Request,
     api_key_data: InferenceModelApiKeyCreate,
@@ -55,7 +55,7 @@ async def create_inference_model_api_key(
     return dict(result)
 
 
-@router.get("/api-keys", response_model=List[InferenceModelApiKeyResponse])
+@router.get("/apikey", response_model=List[InferenceModelApiKeyResponse])
 async def get_inference_model_api_keys(
     request: Request,
 ):
@@ -92,7 +92,7 @@ async def get_inference_model_api_keys(
     ]
 
 
-@router.patch("/api-key/{api_key_id}/delete")
+@router.patch("/apikey/{api_key_id}/delete")
 async def delete_inference_model_api_key(
     request: Request,
     api_key_id: int,

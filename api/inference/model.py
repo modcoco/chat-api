@@ -9,7 +9,7 @@ from models import InferenceModelCreate
 router = APIRouter()
 
 
-@router.post("/inference-model", response_model=InferenceModelCreate)
+@router.post("/model", response_model=InferenceModelCreate)
 async def add_inference_model(
     request: Request,
     model: InferenceModelCreate,
@@ -20,7 +20,7 @@ async def add_inference_model(
         return JSONResponse(content=inserted_model, status_code=201)
 
 
-@router.get("/inference-model", response_model=List[dict])
+@router.get("/model", response_model=List[dict])
 async def get_all_inference_services(
     request: Request,
 ):
@@ -46,7 +46,7 @@ async def get_all_inference_services(
         return [dict(service) for service in services]
 
 
-@router.delete("/inference-model/{id}", response_model=dict)
+@router.delete("/model/{id}", response_model=dict)
 async def delete_inference_model(
     id: int,
     request: Request,

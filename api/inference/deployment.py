@@ -11,7 +11,7 @@ from models import InferenceDeployment, InferenceDeploymentCreate
 router = APIRouter()
 
 
-@router.post("/inference-deployment")
+@router.post("/deployment")
 async def create_deployment(
     request: Request,
     deployment: InferenceDeploymentCreate,
@@ -31,7 +31,7 @@ async def create_deployment(
         return new_deployment
 
 
-@router.get("/inference-deployment", response_model=List[InferenceDeployment])
+@router.get("/deployment", response_model=List[InferenceDeployment])
 async def get_deployments(
     request: Request,
     inference_name: Optional[str] = None,
@@ -46,7 +46,7 @@ async def get_deployments(
         return deployments
 
 
-@router.delete("/inference-deployment/{id}", status_code=204)
+@router.delete("/deployment/{id}", status_code=204)
 async def delete_deployment(
     request: Request,
     id: int,
@@ -66,7 +66,7 @@ async def delete_deployment(
         return {"detail": "Inference deployment deleted successfully."}
 
 
-@router.get("/inference-deployment/{id}/models", response_model=List[dict])
+@router.get("/deployment/{id}/models", response_model=List[dict])
 async def get_model_ids(request: Request, id: int):
     db = request.app.state.db_pool
     async with db.acquire() as conn:

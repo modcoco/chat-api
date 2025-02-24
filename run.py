@@ -40,12 +40,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 from api.openai import router as chat_router
-from api.inference.deployment import router as deployment_router
-from api.inference.model import router as model_router
+from api.inference.deployment import router as deployment_router_v1
+from api.inference.model import router as model_router_v1
+from api.inference.apikey import router as apikey_v1
 
 app.include_router(chat_router)
-app.include_router(deployment_router)
-app.include_router(model_router)
+app.include_router(deployment_router_v1, prefix="/api/v1/inference")
+app.include_router(model_router_v1, prefix="/api/v1/inference")
+app.include_router(apikey_v1, prefix="/api/v1/inference")
 
 
 if __name__ == "__main__":
