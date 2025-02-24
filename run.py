@@ -17,9 +17,16 @@ from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
 
-from inference_api_key import get_api_key_id_by_key
-from inference_deployment import create_inference_deployment, get_deployment_info_by_api_key, get_inference_deployments
-from inference_model import create_inference_model, get_model_id_by_api_key_and_model_name
+from inference_api_key import get_api_key_id_by_key, update_last_used_at
+from inference_deployment import (
+    create_inference_deployment,
+    get_deployment_info_by_api_key,
+    get_inference_deployments,
+)
+from inference_model import (
+    create_inference_model,
+    get_model_id_by_api_key_and_model_name,
+)
 from inference_usage import check_api_key_usage, insert_token_usage
 from models import (
     InferenceDeployment,
@@ -160,6 +167,9 @@ async def proxy_openai(
             status_code=401,
             detail="Authentication Fail",
         )
+
+    # Update last used at
+    await update_last_used_at(api_key, db)
 
     # 检查api-key配额, todo: cache
     apikey_check_res = await check_api_key_usage(api_key, db, True)
@@ -564,8 +574,6 @@ async def delete_inference_model_api_key(
         updated_result = await conn.fetchrow(update_query, api_key_id)
 
     return {"id": updated_result["id"], "is_deleted": updated_result["is_deleted"]}
-
-
 
 
 if __name__ == "__main__":
