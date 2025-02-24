@@ -20,13 +20,25 @@ async def create_deployment(
     db = request.app.state.db_pool
     async with db.acquire() as conn:
         existing_deployment = await conn.fetchrow(
-            "SELECT * FROM inference_deployment WHERE inference_name = $1",
+            """
+            SELECT * FROM inference_deployment 
+            WHERE inference_name = $1 OR deployment_url = $2
+            """,
             deployment.inference_name,
+            deployment.deployment_url,
         )
+
         if existing_deployment:
-            raise HTTPException(
-                status_code=400, detail="Inference deployment already exists."
-            )
+            if existing_deployment["inference_name"] == deployment.inference_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Inference deployment with this name already exists.",
+                )
+            if existing_deployment["deployment_url"] == deployment.deployment_url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Inference deployment with this URL already exists.",
+                )
 
         new_deployment = await create_inference_deployment(conn, deployment)
         return new_deployment
@@ -68,7 +80,7 @@ async def delete_deployment(
         await conn.execute(
             """
             UPDATE inference_deployment
-            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+            SET is_deleted = TRUE, deleted_at = $1, updated_at = $1, status = 'inactive'
             WHERE id = $2
             """,
             datetime.now(),

@@ -24,30 +24,61 @@ async def create_inference_model_api_key(
     else:
         expires_at = None
 
-    created_time = datetime.now()
+    created_at_time = datetime.now()
 
-    query = """
+    # Check if the corresponding inference_model exists and is not deleted
+    query_check_model = """
+    SELECT im.id, idp.is_deleted as idp_is_deleted, idp.status
+    FROM inference_model im
+    JOIN inference_deployment idp ON im.inference_id = idp.id
+    WHERE im.id = $1 AND im.is_deleted = FALSE
+    """
+
+    async with db.acquire() as conn:
+        # Check model existence and validity
+        result = await conn.fetchrow(query_check_model, api_key_data.inference_model_id)
+
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail="Inference model not found or it is marked as deleted",
+            )
+
+        if result["idp_is_deleted"]:
+            raise HTTPException(
+                status_code=400,
+                detail="The associated inference deployment is marked as deleted",
+            )
+
+        if result["status"] != "active":
+            raise HTTPException(
+                status_code=400,
+                detail="The associated inference deployment is not active",
+            )
+
+    # Proceed with inserting the API key
+    query_insert = """
     INSERT INTO inference_model_api_key (
         api_key_name, inference_model_id, api_key, 
         max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
-        created, expires_at,active_days
+        created_at, expires_at, active_days
     ) 
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
     RETURNING id, api_key_name, inference_model_id, api_key, 
               max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
-              created, expires_at, active_days, is_deleted;
+              created_at, expires_at, active_days, is_deleted;
     """
 
     async with db.acquire() as conn:
         result = await conn.fetchrow(
-            query,
+            query_insert,
             api_key_data.api_key_name,
             api_key_data.inference_model_id,
             api_key,
             api_key_data.max_token_quota,
             api_key_data.max_prompt_tokens_quota,
             api_key_data.max_completion_tokens_quota,
-            created_time,
+            created_at_time,
             expires_at,
             api_key_data.active_days,
         )
@@ -60,11 +91,16 @@ async def get_inference_model_api_keys(
     request: Request,
 ):
     query = """
-    SELECT id, api_key_name, inference_model_id, api_key, 
-           max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota,
-           active_days, created, last_used_at, expires_at, is_deleted
-    FROM inference_model_api_key
-    WHERE is_deleted = FALSE;
+    SELECT imak.id, imak.api_key_name, imak.inference_model_id, imak.api_key, 
+           imak.max_token_quota, imak.max_prompt_tokens_quota, imak.max_completion_tokens_quota,
+           imak.active_days, imak.created_at, imak.last_used_at, imak.expires_at, imak.is_deleted
+    FROM inference_model_api_key imak
+    JOIN inference_model im ON im.id = imak.inference_model_id
+    JOIN inference_deployment idp ON im.inference_id = idp.id
+    WHERE imak.is_deleted = FALSE
+    AND im.is_deleted = FALSE
+    AND idp.is_deleted = FALSE
+    AND idp.status = 'active';
     """
 
     db = request.app.state.db_pool
@@ -81,7 +117,7 @@ async def get_inference_model_api_keys(
             "max_prompt_tokens_quota": row.get("max_prompt_tokens_quota"),
             "max_completion_tokens_quota": row.get("max_completion_tokens_quota"),
             "active_days": row.get("active_days"),
-            "created": row["created"].isoformat(),
+            "created_at": row["created_at"].isoformat(),
             "last_used_at": (
                 row["last_used_at"].isoformat() if row["last_used_at"] else None
             ),

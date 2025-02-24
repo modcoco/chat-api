@@ -3,9 +3,27 @@ from typing import Optional
 
 import asyncpg
 from models import InferenceModelCreate
+from fastapi import HTTPException
 
 
 async def create_inference_model(conn, model: InferenceModelCreate):
+    query_check_deployment = """
+    SELECT id, status, is_deleted 
+    FROM inference_deployment 
+    WHERE id = $1
+    """
+
+    deployment = await conn.fetchrow(query_check_deployment, model.inference_id)
+
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Inference deployment not found.")
+
+    if deployment["is_deleted"] or deployment["status"] != "active":
+        raise HTTPException(
+            status_code=400,
+            detail="Inference deployment is either deleted or not in active status.",
+        )
+
     query = """
     INSERT INTO inference_model (
         model_name, visibility, inference_id, 

@@ -35,10 +35,11 @@ async def get_all_inference_services(
         im.max_token_quota,
         im.max_prompt_tokens_quota,
         im.max_completion_tokens_quota,
-        im.created,
-        im.updated
+        im.created_at,
+        im.updated_at
     FROM inference_model im
-    JOIN inference_deployment idp ON im.inference_id = idp.id;
+    JOIN inference_deployment idp ON im.inference_id = idp.id
+    WHERE idp.is_deleted = FALSE AND im.is_deleted = FALSE;
     """
 
     async with db.acquire() as conn:
@@ -46,16 +47,27 @@ async def get_all_inference_services(
         return [dict(service) for service in services]
 
 
-@router.delete("/model/{id}", response_model=dict)
+from datetime import datetime
+
+
+@router.patch("/model/{id}", response_model=dict)
 async def delete_inference_model(
     id: int,
     request: Request,
 ):
     db = request.app.state.db_pool
-    query = "DELETE FROM inference_model WHERE id = $1 RETURNING id, model_name, visibility, inference_id, model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created, updated;"
+    current_time = datetime.now()
+
+    query = """
+    UPDATE inference_model
+    SET is_deleted = TRUE, deleted_at = $1, updated_at = $1
+    WHERE id = $2
+    RETURNING id, model_name, visibility, inference_id, model_id, 
+              max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created_at, updated_at, deleted_at, is_deleted;
+    """
 
     async with db.acquire() as conn:
-        result = await conn.fetchrow(query, id)
+        result = await conn.fetchrow(query, current_time, id)
 
         if not result:
             raise HTTPException(status_code=404, detail="Inference model not found")
