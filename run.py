@@ -17,17 +17,17 @@ from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 import tiktoken
 
-from inference_api_key import get_api_key_id_by_key, update_last_used_at
-from inference_deployment import (
+from app.inference_api_key import get_api_key_id_by_key, update_last_used_at
+from app.inference_deployment import (
     create_inference_deployment,
     get_deployment_info_by_api_key,
     get_inference_deployments,
 )
-from inference_model import (
+from app.inference_model import (
     create_inference_model,
     get_model_id_by_api_key_and_model_name,
 )
-from inference_usage import check_api_key_usage, insert_token_usage
+from app.inference_usage import check_api_key_usage, insert_token_usage
 from models import (
     InferenceDeployment,
     InferenceDeploymentCreate,
