@@ -51,17 +51,25 @@ async def proxy_openai(
             detail=apikey_check_res,
         )
 
-    # 获取模型
-    user_request = await request.json()
-    # Init total_tokens
-    messages = user_request.get("messages", [])
-    model_name = user_request.get("model")
-    prompt_text = " ".join([msg.get("content", "") for msg in messages])
-    total_tokens = {"prompt": len(encoder.encode(prompt_text)), "completion": 0}
+    total_tokens = {"prompt": 0, "completion": 0}
+    extracted_content = []
+    for msg in body.messages:
+        content = msg.get("content")
+        if isinstance(content, str):
+            extracted_content.append(content)
+            tokens = len(encoder.encode(content))
+            total_tokens["prompt"] += tokens
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    text = part["text"]
+                    extracted_content.append(text)
+                    tokens = len(encoder.encode(text))
+                    total_tokens["completion"] += tokens
 
     # Use Model
-    print(f"Use Model: {model_name}")
-    model_id = await get_model_id_by_api_key_and_model_name(api_key, model_name, db)
+    print(f"Use Model: {body.model}")
+    model_id = await get_model_id_by_api_key_and_model_name(api_key, body.model, db)
     if model_id is None:
         print("The model cannot be found.")
         raise HTTPException(
