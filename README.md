@@ -103,6 +103,7 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
 
 ```bash
 # TODO: 
+# 获取原生模型列表，有状态
 # 后端部署状态更新
 # 请求参数完全适配
 # 返回参数完全适配
