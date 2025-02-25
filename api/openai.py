@@ -12,7 +12,7 @@ from app.openai_client import get_client
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
 
-from protocol import ChatCompletionRequest
+from protocol import ChatCompletionRequest, StreamOptions
 
 router = APIRouter()
 encoder = tiktoken.get_encoding("cl100k_base")
@@ -85,15 +85,12 @@ async def proxy_openai(
         body.model = model_id
         body.temperature = 0
         body.stream = True
-        body.stream_options = {"include_usage": True}
-        response = client.chat.completions.create(
-            # model=model_id,
-            # messages=messages,
-            # temperature=0,
-            # stream=True,
-            # stream_options={"include_usage": True},
-            **body.model_dump(),
-        )
+        body.stream_options = StreamOptions(include_usage=True)
+        body_data = {
+            key: value for key, value in body.model_dump().items() if value is not None
+        }
+        print("body_data", body_data)
+        response = client.chat.completions.create(**body_data)
 
         return StreamingResponse(
             generate_response(request, response, encoder, total_tokens, api_key_id),

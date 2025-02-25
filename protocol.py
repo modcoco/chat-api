@@ -219,8 +219,8 @@ class ResponseFormat(OpenAIBaseModel):
 
 
 class StreamOptions(OpenAIBaseModel):
-    include_usage: Optional[bool] = True
-    continuous_usage_stats: Optional[bool] = False
+    include_usage: Optional[bool] = None
+    continuous_usage_stats: Optional[bool] = None
 
 
 class ChatCompletionNamedFunction(OpenAIBaseModel):
@@ -264,19 +264,19 @@ class ChatCompletionRequest(OpenAIBaseModel):
     model: Optional[str] = None
     frequency_penalty: Optional[float] = 0.0
     logit_bias: Optional[Dict[str, float]] = None
-    logprobs: Optional[bool] = False
-    top_logprobs: Optional[int] = 0
+    logprobs: Optional[bool] = None
+    top_logprobs: Optional[int] = None
     # TODO(#9845): remove max_tokens when field is removed from OpenAI API
     max_tokens: Optional[int] = Field(
         default=None,
         deprecated="max_tokens is deprecated in favor of the max_completion_tokens field",
     )
     max_completion_tokens: Optional[int] = None
-    n: Optional[int] = 1
-    presence_penalty: Optional[float] = 0.0
+    n: Optional[int] = None
+    presence_penalty: Optional[float] = None
     response_format: Optional[ResponseFormat] = None
     seed: Optional[int] = Field(None, ge=0, le=100)
-    stop: Optional[Union[str, List[str]]] = Field(default_factory=list)
+    stop: Optional[Union[str, List[str]]] = None
     stream: Optional[bool] = False
     stream_options: Optional[StreamOptions] = None
     temperature: Optional[float] = None
@@ -284,341 +284,341 @@ class ChatCompletionRequest(OpenAIBaseModel):
     tools: Optional[List[ChatCompletionToolsParam]] = None
     tool_choice: Optional[
         Union[Literal["none"], Literal["auto"], ChatCompletionNamedToolChoiceParam]
-    ] = "none"
+    ] = None
 
     # NOTE this will be ignored by VLLM -- the model determines the behavior
-    parallel_tool_calls: Optional[bool] = False
+    parallel_tool_calls: Optional[bool] = None
     user: Optional[str] = None
 
     # doc: begin-chat-completion-sampling-params
     best_of: Optional[int] = None
-    use_beam_search: bool = False
-    top_k: Optional[int] = None
-    min_p: Optional[float] = None
-    repetition_penalty: Optional[float] = None
-    length_penalty: float = 1.0
-    stop_token_ids: Optional[List[int]] = Field(default_factory=list)
-    include_stop_str_in_output: bool = False
-    ignore_eos: bool = False
-    min_tokens: int = 0
-    skip_special_tokens: bool = True
-    spaces_between_special_tokens: bool = True
-    truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
-    prompt_logprobs: Optional[int] = None
+    # use_beam_search: bool = False
+    # top_k: Optional[int] = None
+    # min_p: Optional[float] = None
+    # repetition_penalty: Optional[float] = None
+    # length_penalty: float = 1.0
+    # stop_token_ids: Optional[List[int]] = Field(default_factory=list)
+    # include_stop_str_in_output: bool = False
+    # ignore_eos: bool = False
+    # min_tokens: int = 0
+    # skip_special_tokens: bool = True
+    # spaces_between_special_tokens: bool = True
+    # truncate_prompt_tokens: Optional[Annotated[int, Field(ge=1)]] = None
+    # prompt_logprobs: Optional[int] = None
     # doc: end-chat-completion-sampling-params
 
     # doc: begin-chat-completion-extra-params
-    echo: bool = Field(
-        default=False,
-        description=(
-            "If true, the new message will be prepended with the last message "
-            "if they belong to the same role."
-        ),
-    )
-    add_generation_prompt: bool = Field(
-        default=True,
-        description=(
-            "If true, the generation prompt will be added to the chat template. "
-            "This is a parameter used by chat template in tokenizer config of the "
-            "model."
-        ),
-    )
-    continue_final_message: bool = Field(
-        default=False,
-        description=(
-            "If this is set, the chat will be formatted so that the final "
-            "message in the chat is open-ended, without any EOS tokens. The "
-            "model will continue this message rather than starting a new one. "
-            'This allows you to "prefill" part of the model\'s response for it. '
-            "Cannot be used at the same time as `add_generation_prompt`."
-        ),
-    )
-    add_special_tokens: bool = Field(
-        default=False,
-        description=(
-            "If true, special tokens (e.g. BOS) will be added to the prompt "
-            "on top of what is added by the chat template. "
-            "For most models, the chat template takes care of adding the "
-            "special tokens so this should be set to false (as is the "
-            "default)."
-        ),
-    )
-    documents: Optional[List[Dict[str, str]]] = Field(
-        default=None,
-        description=(
-            "A list of dicts representing documents that will be accessible to "
-            "the model if it is performing RAG (retrieval-augmented generation)."
-            " If the template does not support RAG, this argument will have no "
-            "effect. We recommend that each document should be a dict containing "
-            '"title" and "text" keys.'
-        ),
-    )
-    chat_template: Optional[str] = Field(
-        default=None,
-        description=(
-            "A Jinja template to use for this conversion. "
-            "As of transformers v4.44, default chat template is no longer "
-            "allowed, so you must provide a chat template if the tokenizer "
-            "does not define one."
-        ),
-    )
-    chat_template_kwargs: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description=(
-            "Additional kwargs to pass to the template renderer. "
-            "Will be accessible by the chat template."
-        ),
-    )
-    mm_processor_kwargs: Optional[Dict[str, Any]] = Field(
-        default=None,
-        description=("Additional kwargs to pass to the HF processor."),
-    )
-    guided_json: Optional[Union[str, dict, BaseModel]] = Field(
-        default=None,
-        description=("If specified, the output will follow the JSON schema."),
-    )
-    guided_regex: Optional[str] = Field(
-        default=None,
-        description=("If specified, the output will follow the regex pattern."),
-    )
-    guided_choice: Optional[List[str]] = Field(
-        default=None,
-        description=("If specified, the output will be exactly one of the choices."),
-    )
-    guided_grammar: Optional[str] = Field(
-        default=None,
-        description=("If specified, the output will follow the context free grammar."),
-    )
-    guided_decoding_backend: Optional[str] = Field(
-        default=None,
-        description=(
-            "If specified, will override the default guided decoding backend "
-            "of the server for this specific request. If set, must be either "
-            "'outlines' / 'lm-format-enforcer'"
-        ),
-    )
-    guided_whitespace_pattern: Optional[str] = Field(
-        default=None,
-        description=(
-            "If specified, will override the default whitespace pattern "
-            "for guided json decoding."
-        ),
-    )
-    priority: int = Field(
-        default=0,
-        description=(
-            "The priority of the request (lower means earlier handling; "
-            "default: 0). Any priority other than 0 will raise an error "
-            "if the served model does not use priority scheduling."
-        ),
-    )
-    request_id: str = Field(
-        default_factory=lambda: str(uuid.uuid4()),
-        description=(
-            "The request_id related to this request. If the caller does "
-            "not set it, a random_uuid will be generated. This id is used "
-            "through out the inference process and return in response."
-        ),
-    )
-    logits_processors: Optional[LogitsProcessors] = Field(
-        default=None,
-        description=(
-            "A list of either qualified names of logits processors, or "
-            "constructor objects, to apply when sampling. A constructor is "
-            "a JSON object with a required 'qualname' field specifying the "
-            "qualified name of the processor class/factory, and optional "
-            "'args' and 'kwargs' fields containing positional and keyword "
-            "arguments. For example: {'qualname': "
-            "'my_module.MyLogitsProcessor', 'args': [1, 2], 'kwargs': "
-            "{'param': 'value'}}."
-        ),
-    )
+    # echo: bool = Field(
+    #     default=False,
+    #     description=(
+    #         "If true, the new message will be prepended with the last message "
+    #         "if they belong to the same role."
+    #     ),
+    # )
+    # add_generation_prompt: bool = Field(
+    #     default=True,
+    #     description=(
+    #         "If true, the generation prompt will be added to the chat template. "
+    #         "This is a parameter used by chat template in tokenizer config of the "
+    #         "model."
+    #     ),
+    # )
+    # continue_final_message: bool = Field(
+    #     default=False,
+    #     description=(
+    #         "If this is set, the chat will be formatted so that the final "
+    #         "message in the chat is open-ended, without any EOS tokens. The "
+    #         "model will continue this message rather than starting a new one. "
+    #         'This allows you to "prefill" part of the model\'s response for it. '
+    #         "Cannot be used at the same time as `add_generation_prompt`."
+    #     ),
+    # )
+    # add_special_tokens: bool = Field(
+    #     default=False,
+    #     description=(
+    #         "If true, special tokens (e.g. BOS) will be added to the prompt "
+    #         "on top of what is added by the chat template. "
+    #         "For most models, the chat template takes care of adding the "
+    #         "special tokens so this should be set to false (as is the "
+    #         "default)."
+    #     ),
+    # )
+    # documents: Optional[List[Dict[str, str]]] = Field(
+    #     default=None,
+    #     description=(
+    #         "A list of dicts representing documents that will be accessible to "
+    #         "the model if it is performing RAG (retrieval-augmented generation)."
+    #         " If the template does not support RAG, this argument will have no "
+    #         "effect. We recommend that each document should be a dict containing "
+    #         '"title" and "text" keys.'
+    #     ),
+    # )
+    # chat_template: Optional[str] = Field(
+    #     default=None,
+    #     description=(
+    #         "A Jinja template to use for this conversion. "
+    #         "As of transformers v4.44, default chat template is no longer "
+    #         "allowed, so you must provide a chat template if the tokenizer "
+    #         "does not define one."
+    #     ),
+    # )
+    # chat_template_kwargs: Optional[Dict[str, Any]] = Field(
+    #     default=None,
+    #     description=(
+    #         "Additional kwargs to pass to the template renderer. "
+    #         "Will be accessible by the chat template."
+    #     ),
+    # )
+    # mm_processor_kwargs: Optional[Dict[str, Any]] = Field(
+    #     default=None,
+    #     description=("Additional kwargs to pass to the HF processor."),
+    # )
+    # guided_json: Optional[Union[str, dict, BaseModel]] = Field(
+    #     default=None,
+    #     description=("If specified, the output will follow the JSON schema."),
+    # )
+    # guided_regex: Optional[str] = Field(
+    #     default=None,
+    #     description=("If specified, the output will follow the regex pattern."),
+    # )
+    # guided_choice: Optional[List[str]] = Field(
+    #     default=None,
+    #     description=("If specified, the output will be exactly one of the choices."),
+    # )
+    # guided_grammar: Optional[str] = Field(
+    #     default=None,
+    #     description=("If specified, the output will follow the context free grammar."),
+    # )
+    # guided_decoding_backend: Optional[str] = Field(
+    #     default=None,
+    #     description=(
+    #         "If specified, will override the default guided decoding backend "
+    #         "of the server for this specific request. If set, must be either "
+    #         "'outlines' / 'lm-format-enforcer'"
+    #     ),
+    # )
+    # guided_whitespace_pattern: Optional[str] = Field(
+    #     default=None,
+    #     description=(
+    #         "If specified, will override the default whitespace pattern "
+    #         "for guided json decoding."
+    #     ),
+    # )
+    # priority: int = Field(
+    #     default=0,
+    #     description=(
+    #         "The priority of the request (lower means earlier handling; "
+    #         "default: 0). Any priority other than 0 will raise an error "
+    #         "if the served model does not use priority scheduling."
+    #     ),
+    # )
+    # request_id: str = Field(
+    #     default_factory=lambda: str(uuid.uuid4()),
+    #     description=(
+    #         "The request_id related to this request. If the caller does "
+    #         "not set it, a random_uuid will be generated. This id is used "
+    #         "through out the inference process and return in response."
+    #     ),
+    # )
+    # logits_processors: Optional[LogitsProcessors] = Field(
+    #     default=None,
+    #     description=(
+    #         "A list of either qualified names of logits processors, or "
+    #         "constructor objects, to apply when sampling. A constructor is "
+    #         "a JSON object with a required 'qualname' field specifying the "
+    #         "qualified name of the processor class/factory, and optional "
+    #         "'args' and 'kwargs' fields containing positional and keyword "
+    #         "arguments. For example: {'qualname': "
+    #         "'my_module.MyLogitsProcessor', 'args': [1, 2], 'kwargs': "
+    #         "{'param': 'value'}}."
+    #     ),
+    # )
 
     # doc: end-chat-completion-extra-params
 
     # Default sampling parameters for chat completion requests
-    _DEFAULT_SAMPLING_PARAMS: dict = {
-        "repetition_penalty": 1.0,
-        "temperature": 1.0,
-        "top_p": 1.0,
-        "top_k": -1,
-        "min_p": 0.0,
-    }
+    # _DEFAULT_SAMPLING_PARAMS: dict = {
+    #     "repetition_penalty": 1.0,
+    #     "temperature": 1.0,
+    #     "top_p": 1.0,
+    #     "top_k": -1,
+    #     "min_p": 0.0,
+    # }
 
-    def to_beam_search_params(
-        self, default_max_tokens: int, default_sampling_params: Optional[dict] = None
-    ) -> BeamSearchParams:
-        # TODO(#9845): remove max_tokens when field is removed from OpenAI API
-        max_tokens = self.max_completion_tokens or self.max_tokens
+    # def to_beam_search_params(
+    #     self, default_max_tokens: int, default_sampling_params: Optional[dict] = None
+    # ) -> BeamSearchParams:
+    #     # TODO(#9845): remove max_tokens when field is removed from OpenAI API
+    #     max_tokens = self.max_completion_tokens or self.max_tokens
 
-        if default_sampling_params is None:
-            default_sampling_params = {}
-        n = self.n if self.n is not None else 1
+    #     if default_sampling_params is None:
+    #         default_sampling_params = {}
+    #     n = self.n if self.n is not None else 1
 
-        # Use minimum of context window, user request & server limit.
-        max_tokens = min(
-            val
-            for val in (
-                default_max_tokens,
-                max_tokens,
-                default_sampling_params.get("max_tokens", None),
-            )
-            if val is not None
-        )
+    #     # Use minimum of context window, user request & server limit.
+    #     max_tokens = min(
+    #         val
+    #         for val in (
+    #             default_max_tokens,
+    #             max_tokens,
+    #             default_sampling_params.get("max_tokens", None),
+    #         )
+    #         if val is not None
+    #     )
 
-        if (temperature := self.temperature) is None:
-            temperature = default_sampling_params.get(
-                "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"]
-            )
+    #     if (temperature := self.temperature) is None:
+    #         temperature = default_sampling_params.get(
+    #             "temperature", self._DEFAULT_SAMPLING_PARAMS["temperature"]
+    #         )
 
-        return BeamSearchParams(
-            beam_width=n,
-            max_tokens=max_tokens,
-            ignore_eos=self.ignore_eos,
-            temperature=temperature,
-            length_penalty=self.length_penalty,
-            include_stop_str_in_output=self.include_stop_str_in_output,
-        )
+    #     return BeamSearchParams(
+    #         beam_width=n,
+    #         max_tokens=max_tokens,
+    #         ignore_eos=self.ignore_eos,
+    #         temperature=temperature,
+    #         length_penalty=self.length_penalty,
+    #         include_stop_str_in_output=self.include_stop_str_in_output,
+    #     )
 
-    def _get_guided_json_from_tool(self) -> Optional[Union[str, dict, BaseModel]]:
-        # user has chosen to not use any tool
-        if self.tool_choice == "none" or self.tools is None:
-            return None
+    # def _get_guided_json_from_tool(self) -> Optional[Union[str, dict, BaseModel]]:
+    #     # user has chosen to not use any tool
+    #     if self.tool_choice == "none" or self.tools is None:
+    #         return None
 
-        # user has chosen to use a named tool
-        if type(self.tool_choice) is ChatCompletionNamedToolChoiceParam:
-            tool_name = self.tool_choice.function.name
-            tools = {tool.function.name: tool.function for tool in self.tools}
-            if tool_name not in tools:
-                raise ValueError(f"Tool '{tool_name}' has not been passed in `tools`.")
-            tool = tools[tool_name]
-            return tool.parameters
+    #     # user has chosen to use a named tool
+    #     if type(self.tool_choice) is ChatCompletionNamedToolChoiceParam:
+    #         tool_name = self.tool_choice.function.name
+    #         tools = {tool.function.name: tool.function for tool in self.tools}
+    #         if tool_name not in tools:
+    #             raise ValueError(f"Tool '{tool_name}' has not been passed in `tools`.")
+    #         tool = tools[tool_name]
+    #         return tool.parameters
 
-        return None
+    #     return None
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_stream_options(cls, data):
-        if data.get("stream_options") and not data.get("stream"):
-            raise ValueError("Stream options can only be defined when `stream=True`.")
+    # @model_validator(mode="before")
+    # @classmethod
+    # def validate_stream_options(cls, data):
+    #     if data.get("stream_options") and not data.get("stream"):
+    #         raise ValueError("Stream options can only be defined when `stream=True`.")
 
-        return data
+    #     return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_logprobs(cls, data):
-        if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
-            if data.get("stream") and prompt_logprobs > 0:
-                raise ValueError(
-                    "`prompt_logprobs` are not available when `stream=True`."
-                )
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_logprobs(cls, data):
+    #     if (prompt_logprobs := data.get("prompt_logprobs")) is not None:
+    #         if data.get("stream") and prompt_logprobs > 0:
+    #             raise ValueError(
+    #                 "`prompt_logprobs` are not available when `stream=True`."
+    #             )
 
-            if prompt_logprobs < 0:
-                raise ValueError("`prompt_logprobs` must be a positive value.")
+    #         if prompt_logprobs < 0:
+    #             raise ValueError("`prompt_logprobs` must be a positive value.")
 
-        if (top_logprobs := data.get("top_logprobs")) is not None:
-            if top_logprobs < 0:
-                raise ValueError("`top_logprobs` must be a positive value.")
+    #     if (top_logprobs := data.get("top_logprobs")) is not None:
+    #         if top_logprobs < 0:
+    #             raise ValueError("`top_logprobs` must be a positive value.")
 
-            if not data.get("logprobs"):
-                raise ValueError(
-                    "when using `top_logprobs`, `logprobs` must be set to true."
-                )
+    #         if not data.get("logprobs"):
+    #             raise ValueError(
+    #                 "when using `top_logprobs`, `logprobs` must be set to true."
+    #             )
 
-        return data
+    #     return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_guided_decoding_count(cls, data):
-        if isinstance(data, ValueError):
-            raise data
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_guided_decoding_count(cls, data):
+    #     if isinstance(data, ValueError):
+    #         raise data
 
-        guide_count = sum(
-            [
-                "guided_json" in data and data["guided_json"] is not None,
-                "guided_regex" in data and data["guided_regex"] is not None,
-                "guided_choice" in data and data["guided_choice"] is not None,
-            ]
-        )
-        # you can only use one kind of guided decoding
-        if guide_count > 1:
-            raise ValueError(
-                "You can only use one kind of guided decoding "
-                "('guided_json', 'guided_regex' or 'guided_choice')."
-            )
-        # you can only either use guided decoding or tools, not both
-        if guide_count > 1 and data.get("tool_choice", "none") not in ("none", "auto"):
-            raise ValueError(
-                "You can only either use guided decoding or tools, not both."
-            )
-        return data
+    #     guide_count = sum(
+    #         [
+    #             "guided_json" in data and data["guided_json"] is not None,
+    #             "guided_regex" in data and data["guided_regex"] is not None,
+    #             "guided_choice" in data and data["guided_choice"] is not None,
+    #         ]
+    #     )
+    #     # you can only use one kind of guided decoding
+    #     if guide_count > 1:
+    #         raise ValueError(
+    #             "You can only use one kind of guided decoding "
+    #             "('guided_json', 'guided_regex' or 'guided_choice')."
+    #         )
+    #     # you can only either use guided decoding or tools, not both
+    #     if guide_count > 1 and data.get("tool_choice", "none") not in ("none", "auto"):
+    #         raise ValueError(
+    #             "You can only either use guided decoding or tools, not both."
+    #         )
+    #     return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_tool_usage(cls, data):
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_tool_usage(cls, data):
 
-        # if "tool_choice" is not specified but tools are provided,
-        # default to "auto" tool_choice
-        if "tool_choice" not in data and data.get("tools"):
-            data["tool_choice"] = "auto"
+    #     # if "tool_choice" is not specified but tools are provided,
+    #     # default to "auto" tool_choice
+    #     if "tool_choice" not in data and data.get("tools"):
+    #         data["tool_choice"] = "auto"
 
-        # if "tool_choice" is "none" -- ignore tools if present
-        if "tool_choice" in data and data["tool_choice"] == "none":
-            # ensure that no tools are present
-            data.pop("tools", None)
-            return data
+    #     # if "tool_choice" is "none" -- ignore tools if present
+    #     if "tool_choice" in data and data["tool_choice"] == "none":
+    #         # ensure that no tools are present
+    #         data.pop("tools", None)
+    #         return data
 
-        # if "tool_choice" is specified -- validation
-        if "tool_choice" in data:
+    #     # if "tool_choice" is specified -- validation
+    #     if "tool_choice" in data:
 
-            # ensure that if "tool choice" is specified, tools are present
-            if "tools" not in data or data["tools"] is None:
-                raise ValueError("When using `tool_choice`, `tools` must be set.")
+    #         # ensure that if "tool choice" is specified, tools are present
+    #         if "tools" not in data or data["tools"] is None:
+    #             raise ValueError("When using `tool_choice`, `tools` must be set.")
 
-            # make sure that tool choice is either a named tool
-            # OR that it's set to "auto"
-            if data["tool_choice"] != "auto" and not isinstance(
-                data["tool_choice"], dict
-            ):
-                raise ValueError(
-                    '`tool_choice` must either be a named tool, "auto", ' 'or "none".'
-                )
+    #         # make sure that tool choice is either a named tool
+    #         # OR that it's set to "auto"
+    #         if data["tool_choice"] != "auto" and not isinstance(
+    #             data["tool_choice"], dict
+    #         ):
+    #             raise ValueError(
+    #                 '`tool_choice` must either be a named tool, "auto", ' 'or "none".'
+    #             )
 
-            # ensure that if "tool_choice" is specified as an object,
-            # it matches a valid tool
-            if isinstance(data["tool_choice"], dict):
-                valid_tool = False
-                specified_function = data["tool_choice"].get("function")
-                if not specified_function:
-                    raise ValueError(
-                        "Expected field `function` in `tool_choice`."
-                        ' Correct usage: `{"type": "function",'
-                        ' "function": {"name": "my_function"}}`'
-                    )
-                specified_function_name = specified_function.get("name")
-                if not specified_function_name:
-                    raise ValueError(
-                        "Expected field `name` in `function` in `tool_choice`."
-                        'Correct usage: `{"type": "function", '
-                        '"function": {"name": "my_function"}}`'
-                    )
-                for tool in data["tools"]:
-                    if tool["function"]["name"] == specified_function_name:
-                        valid_tool = True
-                        break
-                if not valid_tool:
-                    raise ValueError(
-                        "The tool specified in `tool_choice` does not match any"
-                        " of the specified `tools`"
-                    )
-        return data
+    #         # ensure that if "tool_choice" is specified as an object,
+    #         # it matches a valid tool
+    #         if isinstance(data["tool_choice"], dict):
+    #             valid_tool = False
+    #             specified_function = data["tool_choice"].get("function")
+    #             if not specified_function:
+    #                 raise ValueError(
+    #                     "Expected field `function` in `tool_choice`."
+    #                     ' Correct usage: `{"type": "function",'
+    #                     ' "function": {"name": "my_function"}}`'
+    #                 )
+    #             specified_function_name = specified_function.get("name")
+    #             if not specified_function_name:
+    #                 raise ValueError(
+    #                     "Expected field `name` in `function` in `tool_choice`."
+    #                     'Correct usage: `{"type": "function", '
+    #                     '"function": {"name": "my_function"}}`'
+    #                 )
+    #             for tool in data["tools"]:
+    #                 if tool["function"]["name"] == specified_function_name:
+    #                     valid_tool = True
+    #                     break
+    #             if not valid_tool:
+    #                 raise ValueError(
+    #                     "The tool specified in `tool_choice` does not match any"
+    #                     " of the specified `tools`"
+    #                 )
+    #     return data
 
-    @model_validator(mode="before")
-    @classmethod
-    def check_generation_prompt(cls, data):
-        if data.get("continue_final_message") and data.get("add_generation_prompt"):
-            raise ValueError(
-                "Cannot set both `continue_final_message` and "
-                "`add_generation_prompt` to True."
-            )
-        return data
+    # @model_validator(mode="before")
+    # @classmethod
+    # def check_generation_prompt(cls, data):
+    #     if data.get("continue_final_message") and data.get("add_generation_prompt"):
+    #         raise ValueError(
+    #             "Cannot set both `continue_final_message` and "
+    #             "`add_generation_prompt` to True."
+    #         )
+    #     return data
