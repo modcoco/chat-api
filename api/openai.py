@@ -1,6 +1,7 @@
+from http import HTTPStatus
 import json
 import time
-from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi import APIRouter, Depends, Request, Header, HTTPException
 from fastapi.responses import StreamingResponse
 import tiktoken
 
@@ -18,8 +19,18 @@ router = APIRouter()
 encoder = tiktoken.get_encoding("cl100k_base")
 
 
+async def validate_json_request(raw_request: Request):
+    content_type = raw_request.headers.get("content-type", "").lower()
+    media_type = content_type.split(";", maxsplit=1)[0]
+    if media_type != "application/json":
+        raise HTTPException(
+            status_code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported Media Type: Only 'application/json' is allowed",
+        )
+
+
 # https://github.com/vllm-project/vllm/blob/f90a37559315defd369441c4d2461989a10b9fc1/vllm/entrypoints/openai/api_server.py#L399
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat/completions", dependencies=[Depends(validate_json_request)])
 async def proxy_openai(
     request: Request, body: ChatCompletionRequest, authorization: str = Header(None)
 ):
