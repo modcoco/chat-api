@@ -99,5 +99,12 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
   ]
 }
 
-// TODO: 后端部署状态，请求参数完全适配，记token方案
+```
+
+```bash
+# TODO: 
+# 后端部署状态更新
+# 请求参数完全适配
+# 返回参数完全适配
+# 记token方案
 ```
