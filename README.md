@@ -1,3 +1,7 @@
+https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#completions-api
+
+https://platform.openai.com/docs/api-reference/completions/create
+
 ```bash
 curl https://api.deepseek.com/chat/completions \
   -H "Content-Type: application/json" \
@@ -23,11 +27,11 @@ curl https://api.deepseek.com/chat/completions \
       }'
 
 
-curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
+curl --noproxy '*' -X POST "http://localhost:30080/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer sk-3fb394eed1bb4a8199062ff065d0a51c" \
+        -H "Authorization: Bearer sk-2efff0e889864bada216de078e41c0a5" \
         --data '{
-                "model": "/mnt/data/models/deepseek-ai_DeepSeek-R1",
+                "model": "/mnt/data/models/DeepSeek-R1",
                 "stream": true,
                 "messages": [
                         {
@@ -98,11 +102,10 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
     }
   ]
 }
-
 ```
 
 ```bash
-# TODO: 
+# TODO:
 # 获取原生模型列表，有状态
 # 后端部署状态更新
 # 请求参数完全适配
