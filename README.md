@@ -2,6 +2,8 @@ https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html#completions
 
 https://platform.openai.com/docs/api-reference/completions/create
 
+https://platform.openai.com/tokenizer
+
 ```bash
 curl https://api.deepseek.com/chat/completions \
   -H "Content-Type: application/json" \
