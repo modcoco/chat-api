@@ -7,12 +7,12 @@ from fastapi import HTTPException
 
 
 async def create_inference_model(conn, model: InferenceModelCreate):
+    # 1. 检查部署是否存在且可用
     query_check_deployment = """
     SELECT id, status, is_deleted 
     FROM inference_deployment 
     WHERE id = $1
     """
-
     deployment = await conn.fetchrow(query_check_deployment, model.inference_id)
 
     if not deployment:
@@ -24,6 +24,23 @@ async def create_inference_model(conn, model: InferenceModelCreate):
             detail="Inference deployment is either deleted or not in active status.",
         )
 
+    # 2. 检查模型是否已注册（inference_id + model_id 唯一）
+    query_check_existing = """
+    SELECT id 
+    FROM inference_model 
+    WHERE inference_id = $1 AND model_id = $2 AND is_deleted = FALSE
+    """
+    existing_model = await conn.fetchrow(
+        query_check_existing, model.inference_id, model.model_id
+    )
+
+    if existing_model:
+        raise HTTPException(
+            status_code=400,
+            detail="Model already registered with this inference deployment.",
+        )
+
+    # 3. 插入新模型
     query = """
     INSERT INTO inference_model (
         model_name, visibility, inference_id, 

@@ -12,7 +12,7 @@ async def get_inference_deployments(
 ) -> List[InferenceDeployment]:
     query = """
     SELECT id, inference_name, type, deployment_url, models_api_key, 
-           TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at, status  -- 格式化 created_at 字段为字符串
+           TO_CHAR(created_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS created_at, status
     FROM inference_deployment where is_deleted = FALSE
     """
     if inference_name:
@@ -27,10 +27,17 @@ async def get_inference_deployments(
 async def create_inference_deployment(conn, deployment: InferenceDeploymentCreate):
     url_with_models = f"{deployment.deployment_url}/v1/models"
 
+    api_key = (
+        deployment.models_api_key
+        if deployment.models_api_key is not None
+        else "sk-default"
+    )
+    headers = {"Authorization": f"Bearer {api_key}"}
+
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(url_with_models)
-            response.raise_for_status()  # 如果请求失败会抛出异常
+            response = await client.get(url_with_models, headers=headers)
+            response.raise_for_status()
             data = response.json()
 
             if (

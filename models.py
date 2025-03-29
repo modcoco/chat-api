@@ -1,13 +1,18 @@
 # models.py
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, ConfigDict, Field
 from typing import Optional
 
 
 class InferenceDeploymentCreate(BaseModel):
-    inference_name: str
+    model_config = ConfigDict(
+        alias_generator=lambda x: x.lower() if len(x) == 1 else x[0].lower() + x[1:],
+        populate_by_name=True,
+    )
+
+    inference_name: str = Field(alias="inferenceName")
     type: str
-    deployment_url: str
-    models_api_key: Optional[str] = None
+    deployment_url: str = Field(alias="deploymentUrl")
+    models_api_key: Optional[str] = Field(alias="modelsApiKey", default=None)
 
     @field_validator("type")
     def validate_type(cls, v):
@@ -17,23 +22,37 @@ class InferenceDeploymentCreate(BaseModel):
 
 
 class InferenceDeployment(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=lambda x: x.lower() if len(x) == 1 else x[0].lower() + x[1:],
+        populate_by_name=True,
+    )
+
     id: int
-    inference_name: str
+    inference_name: str = Field(alias="inferenceName")
     type: str
-    deployment_url: str
-    models_api_key: Optional[str]
-    created_at: str
+    deployment_url: str = Field(alias="deploymentUrl")
+    models_api_key: Optional[str] = Field(alias="modelsApiKey")
+    created_at: str = Field(alias="createdAt")
     status: str
 
 
 class InferenceModelCreate(BaseModel):
-    model_name: str
+    model_config = ConfigDict(
+        alias_generator=lambda x: x.lower() if len(x) == 1 else x[0].lower() + x[1:],
+        populate_by_name=True,
+    )
+
+    model_name: str = Field(alias="modelName")
     visibility: str
-    inference_id: int
-    model_id: str
-    max_token_quota: Optional[int] = None
-    max_prompt_tokens_quota: Optional[int] = None
-    max_completion_tokens_quota: Optional[int] = None
+    inference_id: int = Field(alias="inferenceId")
+    model_id: str = Field(alias="modelId")
+    max_token_quota: Optional[int] = Field(alias="maxTokenQuota", default=None)
+    max_prompt_tokens_quota: Optional[int] = Field(
+        alias="maxPromptTokensQuota", default=None
+    )
+    max_completion_tokens_quota: Optional[int] = Field(
+        alias="maxCompletionTokensQuota", default=None
+    )
 
 
 class InferenceModelApiKeyCreate(BaseModel):

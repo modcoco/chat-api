@@ -22,7 +22,7 @@ async def create_deployment(
         existing_deployment = await conn.fetchrow(
             """
             SELECT * FROM inference_deployment 
-            WHERE inference_name = $1 OR deployment_url = $2
+            WHERE (inference_name = $1 OR deployment_url = $2) AND is_deleted = FALSE
             """,
             deployment.inference_name,
             deployment.deployment_url,
@@ -95,7 +95,11 @@ async def get_model_ids(request: Request, id: int):
     db = request.app.state.db_pool
     async with db.acquire() as conn:
         deployment = await conn.fetchrow(
-            "SELECT deployment_url FROM inference_deployment WHERE id = $1 AND is_deleted = FALSE",
+            """
+            SELECT deployment_url, models_api_key 
+            FROM inference_deployment 
+            WHERE id = $1 AND is_deleted = FALSE
+            """,
             id,
         )
 
@@ -105,23 +109,29 @@ async def get_model_ids(request: Request, id: int):
             )
 
         deployment_url = deployment["deployment_url"]
+        models_api_key = (
+            deployment["models_api_key"] or "sk-default"
+        )  # 默认使用 "sk-default" 如果为空
         url_with_models = f"{deployment_url}/v1/models"
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(url_with_models)
+                # 携带 Authorization 头
+                headers = {"Authorization": f"Bearer {models_api_key}"}
+                response = await client.get(url_with_models, headers=headers)
                 response.raise_for_status()
 
                 data = response.json()
 
-                if "data" in data:
+                if isinstance(data, dict) and "data" in data:
+                    # 返回模型列表，并关联 inference_id
                     filtered_data = [
                         {
                             "id": item.get("id"),
-                            "inference_id": id,
+                            "inferenceId": id,
                             "created": item.get("created"),
-                            "owned_by": item.get("owned_by"),
-                            "max_model_len": item.get("max_model_len"),
+                            "ownedBy": item.get("owned_by"),
+                            "maxModelLen": item.get("max_model_len"),
                         }
                         for item in data["data"]
                     ]
@@ -129,6 +139,8 @@ async def get_model_ids(request: Request, id: int):
                 else:
                     return []
             except httpx.RequestError as e:
+                request.app.state.logger.error(f"Request error: {e}")
                 return []
             except httpx.HTTPStatusError as e:
+                request.app.state.logger.error(f"HTTP error: {e}")
                 return []
