@@ -64,3 +64,45 @@ CREATE TABLE
         created_at TIMESTAMP NOT NULL, -- 记录创建时间
         FOREIGN KEY (api_key_id) REFERENCES inference_model_api_key (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除记录
     );
+
+CREATE TABLE
+    inference_api_key (
+        id SERIAL PRIMARY KEY,
+        api_key_name VARCHAR(255) NOT NULL,
+        api_key VARCHAR(255) NOT NULL UNIQUE,
+        active_days INT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMP,
+        expires_at TIMESTAMP,
+        deleted_at TIMESTAMP,
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE
+    );
+
+CREATE TABLE
+    inference_api_key_model (
+        id SERIAL PRIMARY KEY,
+        api_key_id INT NOT NULL,
+        model_id INT NOT NULL,
+        max_token_quota INT,
+        max_prompt_tokens_quota INT,
+        max_completion_tokens_quota INT,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP,
+        FOREIGN KEY (api_key_id) REFERENCES inference_api_key (id) ON DELETE CASCADE,
+        FOREIGN KEY (model_id) REFERENCES inference_model (id) ON DELETE CASCADE,
+        UNIQUE (api_key_id, model_id)
+    );
+
+CREATE TABLE
+    inference_api_key_token_usage (
+        id SERIAL PRIMARY KEY,
+        completions_chunk_id VARCHAR(255),
+        api_key_id INT NOT NULL,
+        model_id INT NOT NULL,
+        prompt_tokens INT NOT NULL,
+        completion_tokens INT NOT NULL,
+        type VARCHAR(50),
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (api_key_id) REFERENCES inference_api_key (id) ON DELETE CASCADE,
+        FOREIGN KEY (model_id) REFERENCES inference_model (id) ON DELETE CASCADE
+    );
