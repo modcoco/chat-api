@@ -66,13 +66,13 @@ async def proxy_openai(
     model_id, model_path = model_info
 
     # 检查api-key配额, todo: cache
-    apikey_check_res = await check_api_key_usage(model_id, api_key, db, True)
-    if apikey_check_res is not None:
-        print("The usage is over the quota:", api_key, apikey_check_res)
-        raise HTTPException(
-            status_code=400,
-            detail=apikey_check_res,
-        )
+    # apikey_check_res = await check_api_key_usage(model_id, api_key, db, True)
+    # if apikey_check_res is not None:
+    #     print("The usage is over the quota:", api_key, apikey_check_res)
+    #     raise HTTPException(
+    #         status_code=400,
+    #         detail=apikey_check_res,
+    #     )
 
     total_tokens = {"prompt": 0, "completion": 0}
     extracted_content = []
