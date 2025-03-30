@@ -394,4 +394,4 @@ async def delete_multi_model_api_key(
         
         updated_result = await conn.fetchrow(update_query, api_key_id)
     
-    return {"id": updated_result["id"], "is_deleted": updated_result["is_deleted"]}
+    return {"id": updated_result["id"], "isDeleted": updated_result["is_deleted"]}

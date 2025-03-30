@@ -74,26 +74,47 @@ class InferenceModelApiKeyResponse(BaseModel):
     max_completion_tokens_quota: Optional[int] = None
     active_days: Optional[int] = None
     created_at: str
-    last_used_at: Optional[str] = None  # 将last_used_at字段改为Optional[str]
+    last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
     is_deleted: bool
 
 
-# New classes for multi-model API key creation and response
-class MultiModelApiKeyCreate(BaseModel):
-    api_key_name: str
-    active_days: Optional[int] = None
-    model_quotas: List["ModelQuota"]
+def to_camel(string: str) -> str:
+    words = string.split("_")
+    return words[0] + "".join(word.capitalize() for word in words[1:])
 
 
 class ModelQuota(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     model_id: int
     max_token_quota: Optional[int] = None
     max_prompt_tokens_quota: Optional[int] = None
     max_completion_tokens_quota: Optional[int] = None
 
 
+class MultiModelApiKeyCreate(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_key_name: str
+    active_days: Optional[int] = None
+    model_quotas: List[ModelQuota]
+
+
+class ModelQuotaResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    model_id: int
+    model_name: str
+    max_token_quota: Optional[int] = None
+    max_prompt_tokens_quota: Optional[int] = None
+    max_completion_tokens_quota: Optional[int] = None
+    created_at: str
+
+
 class MultiModelApiKeyResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     id: int
     api_key_name: str
     api_key: str
@@ -102,13 +123,4 @@ class MultiModelApiKeyResponse(BaseModel):
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
     is_deleted: bool
-    model_quotas: List["ModelQuotaResponse"]
-
-
-class ModelQuotaResponse(BaseModel):
-    model_id: int
-    model_name: str
-    max_token_quota: Optional[int] = None
-    max_prompt_tokens_quota: Optional[int] = None
-    max_completion_tokens_quota: Optional[int] = None
-    created_at: str
+    model_quotas: List[ModelQuotaResponse]
