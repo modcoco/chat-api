@@ -10,6 +10,7 @@ async def process_token_usage_queue(app: FastAPI):
             break
 
         (
+            model_id,
             completions_chunk_id,
             api_key_id,
             prompt_tokens,
@@ -19,6 +20,7 @@ async def process_token_usage_queue(app: FastAPI):
         try:
             await insert_token_usage(
                 app.state.db_pool,
+                model_id,
                 completions_chunk_id,
                 api_key_id,
                 prompt_tokens,

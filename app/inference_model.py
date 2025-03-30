@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 import asyncpg
 from models import InferenceModelCreate
@@ -76,24 +76,34 @@ async def create_inference_model(conn, model: InferenceModelCreate):
     return result_dict
 
 
-async def get_model_id_by_api_key_and_model_name(
+async def get_model_info_by_api_key_and_model_name(
     api_key: str, model_name: str, db: asyncpg.Pool
-) -> Optional[str]:
-    # 使用 JOIN 查询获取 model_id 并验证 model_name 是否匹配
+) -> Optional[Tuple[int, str]]:
+    """
+    根据API Key和模型名称获取模型信息
+
+    参数:
+        api_key: 用户提供的API Key
+        model_name: 请求的模型名称
+        db: 数据库连接池
+
+    返回:
+        元组 (model_id: int, model_path: str) 或 None
+    """
     query = """
-    SELECT im.model_id
-    FROM inference_model_api_key imak
-    JOIN inference_model im ON imak.inference_model_id = im.id
-    WHERE imak.api_key = $1
+    SELECT im.id AS model_id, im.model_id AS model_path
+    FROM inference_api_key iak
+    JOIN inference_api_key_model iakm ON iak.id = iakm.api_key_id
+    JOIN inference_model im ON iakm.model_id = im.id
+    WHERE iak.api_key = $1
     AND im.model_name = $2
-    AND imak.is_deleted = FALSE
+    AND iak.is_deleted = FALSE
+    AND im.is_deleted = FALSE
     """
 
     async with db.acquire() as conn:
         result = await conn.fetchrow(query, api_key, model_name)
 
-    # 如果找到匹配的结果，则返回 model_id，否则返回 None
     if result:
-        return result["model_id"]
-    else:
-        return None
+        return result["model_id"], result["model_path"]  # 返回 (int, str)
+    return None

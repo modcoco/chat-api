@@ -45,9 +45,9 @@ curl --noproxy '*' -X POST "http://localhost:30080/v1/chat/completions" \
 
 curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer sk-3fb394eed1bb4a8199062ff065d0a51c" \
+        -H "Authorization: Bearer sk-multi-d32e0555882d4518a3fd40bd2340d1a4" \
         --data '{
-                "model": "/mnt/data/models/deepseek-ai_DeepSeek-R1",
+                "model": "deepseek-r1-distill-qwen-32b",
                 "stream": true,
                 "messages": [
                         {
@@ -114,3 +114,20 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
 # 返回参数完全适配
 # 记token方案
 ```
+
+
+
+deepseek-r1-distill-qwen-32b    http://218.207.1.239:8001       sk-9ae180f15c40483ba64d3aaaef9805c2
+deepseek-r1-distill-llama-70b   http://218.207.1.239:8002       sk-8c08aa310e11455cb31881c77f03ce72
+deepseek-v3-0324                http://218.207.1.239:8000       sk-5c08aa543e14455cb31881c77f03ce35
+deepseek-r1                     http://218.207.1.239:30080      sk-2efff0e889864bada216de078e41c0a5
+
+
+
+curl http://218.207.1.239:8001/v1/models -H "Authorization: Bearer sk-9ae180f15c40483ba64d3aaaef9805c2"
+curl http://218.207.1.239:8002/v1/models -H "Authorization: Bearer sk-8c08aa310e11455cb31881c77f03ce72"
+curl http://218.207.1.239:8000/v1/models -H "Authorization: Bearer sk-5c08aa543e14455cb31881c77f03ce35"
+curl http://218.207.1.239:30080/v1/models -H "Authorization: Bearer sk-2efff0e889864bada216de078e41c0a5"
+
+-- 归属
+-- 单个key对应多个模型

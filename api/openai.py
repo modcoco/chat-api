@@ -7,7 +7,7 @@ import tiktoken
 
 from app.inference_api_key import get_api_key_id_by_key, update_last_used_at
 from app.inference_deployment import get_deployment_info_by_api_key
-from app.inference_model import get_model_id_by_api_key_and_model_name
+from app.inference_model import get_model_info_by_api_key_and_model_name
 from app.inference_usage import check_api_key_usage
 from app.openai_client import get_client
 from openai.types.chat import ChatCompletionChunk
@@ -53,8 +53,20 @@ async def proxy_openai(
     # Update last used at
     await update_last_used_at(api_key, db)
 
+    # Use Model
+    print(f"Use Model: {body.model}")
+    model_info = await get_model_info_by_api_key_and_model_name(api_key, body.model, db)
+    if model_info is None:
+        print("The model cannot be found.")
+        raise HTTPException(
+            status_code=400,
+            detail="The model cannot be found.",
+        )
+
+    model_id, model_path = model_info
+
     # 检查api-key配额, todo: cache
-    apikey_check_res = await check_api_key_usage(api_key, db, True)
+    apikey_check_res = await check_api_key_usage(model_id, api_key, db, True)
     if apikey_check_res is not None:
         print("The usage is over the quota:", api_key, apikey_check_res)
         raise HTTPException(
@@ -78,18 +90,8 @@ async def proxy_openai(
                     tokens = len(encoder.encode(text))
                     total_tokens["completion"] += tokens
 
-    # Use Model
-    print(f"Use Model: {body.model}")
-    model_id = await get_model_id_by_api_key_and_model_name(api_key, body.model, db)
-    if model_id is None:
-        print("The model cannot be found.")
-        raise HTTPException(
-            status_code=400,
-            detail="The model cannot be found.",
-        )
-
     # Get active inference deployment
-    deployment_info = await get_deployment_info_by_api_key(api_key, db)
+    deployment_info = await get_deployment_info_by_api_key(api_key, model_id, db)
     if deployment_info is None:
         print("The inference deployment is down.")
         raise HTTPException(
@@ -101,7 +103,7 @@ async def proxy_openai(
 
         print(deployment_info)
         client = get_client(deployment_url + "/v1", models_api_key)
-        body.model = model_id
+        body.model = model_path
         body.temperature = 0
         body.stream = True
         body.stream_options = StreamOptions(include_usage=True)
@@ -112,7 +114,9 @@ async def proxy_openai(
         response = client.chat.completions.create(**body_data)
 
         return StreamingResponse(
-            generate_response(request, response, encoder, total_tokens, api_key_id),
+            generate_response(
+                request, response, encoder, total_tokens, model_id, api_key_id
+            ),
             media_type="text/event-stream",
         )
 
@@ -121,7 +125,9 @@ async def proxy_openai(
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
-async def generate_response(request, response, encoder, total_tokens, api_key_id):
+async def generate_response(
+    request, response, encoder, total_tokens, model_id, api_key_id
+):
     try:
         for chunk in response:
             if chunk.usage is not None:
@@ -133,8 +139,9 @@ async def generate_response(request, response, encoder, total_tokens, api_key_id
                 token_usage_queue = request.app.state.token_usage_queue
                 await token_usage_queue.put(
                     (
+                        model_id,
                         chunk.id,
-                        api_key_id,  # api-key-id
+                        api_key_id,
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "completed",
@@ -158,6 +165,7 @@ async def generate_response(request, response, encoder, total_tokens, api_key_id
                 token_usage_queue = request.app.state.token_usage_queue
                 await token_usage_queue.put(
                     (
+                        model_id,
                         chunk.id,
                         api_key_id,  # api-key-id
                         total_tokens["prompt"],

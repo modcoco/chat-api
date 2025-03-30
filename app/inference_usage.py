@@ -7,7 +7,7 @@ import asyncpg
 
 
 async def check_api_key_usage(
-    api_key: str, db: asyncpg.Pool, check_model_quota: bool = True
+    model_id: int, api_key: str, db: asyncpg.Pool, check_model_quota: bool = True
 ) -> Optional[str]:
     # 获取 api_key 对应的配额信息
     query = """
@@ -152,6 +152,7 @@ async def check_model_usage(
 
 async def insert_token_usage(
     db_pool,
+    model_id,
     completions_chunk_id,
     api_key_id,
     prompt_tokens,
@@ -168,10 +169,11 @@ async def insert_token_usage(
                 async with connection.transaction():
                     await connection.execute(
                         """
-                        INSERT INTO inference_model_api_key_token_usage 
-                        (completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created_at)
-                        VALUES ($1, $2, $3, $4, $5, $6)
+                        INSERT INTO inference_api_key_token_usage
+                        (model_id, completions_chunk_id, api_key_id, prompt_tokens, completion_tokens, type, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
                         """,
+                        model_id,
                         completions_chunk_id,
                         api_key_id,
                         prompt_tokens,

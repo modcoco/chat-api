@@ -74,27 +74,36 @@ async def create_inference_deployment(conn, deployment: InferenceDeploymentCreat
 
 
 async def get_deployment_info_by_api_key(
-    api_key: str, db: asyncpg.Pool
+    api_key: str, model_id: int, db: asyncpg.Pool  # 新增的 model_id 参数
 ) -> Optional[Tuple[str, str]]:
-    # 使用 JOIN 查询获取 deployment_url 和 models_api_key，明确指定每个表的 id 列
+    """
+    根据API Key和model_id获取特定模型的部署信息
+
+    参数:
+        api_key: 用户提供的API Key
+        model_id: 请求的模型ID
+        db: 数据库连接池
+
+    返回:
+        元组 (deployment_url, models_api_key) 或 None
+    """
     query = """
     SELECT idp.deployment_url, idp.models_api_key
     FROM inference_deployment idp
     JOIN inference_model im ON idp.id = im.inference_id
-    JOIN inference_model_api_key imak ON im.id = imak.inference_model_id
-    WHERE imak.api_key = $1
-    AND imak.is_deleted = FALSE
+    JOIN inference_api_key_model iakm ON im.id = iakm.model_id
+    JOIN inference_api_key iak ON iakm.api_key_id = iak.id
+    WHERE iak.api_key = $1
+    AND im.id = $2
+    AND iak.is_deleted = FALSE
+    AND im.is_deleted = FALSE
     """
 
     async with db.acquire() as conn:
-        result = await conn.fetchrow(query, api_key)
+        result = await conn.fetchrow(query, api_key, model_id)
 
-    # 如果找到了匹配的结果，则返回 deployment_url 和 models_api_key，否则返回 None
     if result:
         deployment_url = result["deployment_url"]
-        models_api_key = result["models_api_key"]
-        if models_api_key is None:
-            models_api_key = "please_set_models_api_key"
+        models_api_key = result["models_api_key"] or "please_set_models_api_key"
         return deployment_url, models_api_key
-    else:
-        return None
+    return None
