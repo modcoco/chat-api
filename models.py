@@ -1,6 +1,6 @@
 # models.py
 from pydantic import BaseModel, field_validator, ConfigDict, Field
-from typing import Optional
+from typing import Optional, List
 
 
 class InferenceDeploymentCreate(BaseModel):
@@ -77,3 +77,38 @@ class InferenceModelApiKeyResponse(BaseModel):
     last_used_at: Optional[str] = None  # 将last_used_at字段改为Optional[str]
     expires_at: Optional[str] = None
     is_deleted: bool
+
+
+# New classes for multi-model API key creation and response
+class MultiModelApiKeyCreate(BaseModel):
+    api_key_name: str
+    active_days: Optional[int] = None
+    model_quotas: List["ModelQuota"]
+
+
+class ModelQuota(BaseModel):
+    model_id: int
+    max_token_quota: Optional[int] = None
+    max_prompt_tokens_quota: Optional[int] = None
+    max_completion_tokens_quota: Optional[int] = None
+
+
+class MultiModelApiKeyResponse(BaseModel):
+    id: int
+    api_key_name: str
+    api_key: str
+    active_days: Optional[int] = None
+    created_at: str
+    last_used_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    is_deleted: bool
+    model_quotas: List["ModelQuotaResponse"]
+
+
+class ModelQuotaResponse(BaseModel):
+    model_id: int
+    model_name: str
+    max_token_quota: Optional[int] = None
+    max_prompt_tokens_quota: Optional[int] = None
+    max_completion_tokens_quota: Optional[int] = None
+    created_at: str
