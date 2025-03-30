@@ -171,7 +171,7 @@ async def create_multi_model_api_key(
 ):
     db = request.app.state.db_pool
     unique_id = uuid.uuid4().hex
-    api_key = f"sk-multi-{unique_id}"
+    api_key = f"sk-{unique_id}"
 
     # 计算过期时间
     expires_at = None
