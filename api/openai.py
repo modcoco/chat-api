@@ -1,9 +1,14 @@
+import asyncio
 from http import HTTPStatus
 import json
 import time
-from fastapi import APIRouter, Depends, Request, Header, HTTPException
+from fastapi import APIRouter, Depends, Request, Header, HTTPException, status
+from fastapi.security import APIKeyHeader
 from fastapi.responses import StreamingResponse
+import httpx
 import tiktoken
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
 
 from app.inference_api_key import get_api_key_id_by_key, update_last_used_at
 from app.inference_deployment import get_deployment_info_by_api_key
@@ -12,6 +17,7 @@ from app.inference_usage import check_api_key_usage
 from app.openai_client import get_client
 from openai.types.chat import ChatCompletionChunk
 from openai.types.chat.chat_completion_chunk import Choice, ChoiceDelta
+from pydantic import BaseModel
 
 from protocol import ChatCompletionRequest, StreamOptions
 
@@ -123,6 +129,121 @@ async def proxy_openai(
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+
+api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
+
+
+class ModelResponse(BaseModel):
+    object: str = "list"
+    data: List[Dict[str, Any]]
+
+
+@router.get("/v1/models", response_model=ModelResponse)
+async def get_models_by_api_key(
+    request: Request, authorization: str = Depends(api_key_header)
+):
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing Authorization header",
+        )
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Authorization header format. Expected 'Bearer <token>'",
+        )
+
+    api_key = authorization[7:].strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Empty API key",
+        )
+
+    async with request.app.state.db_pool.acquire() as conn:
+        api_key_record = await conn.fetchrow(
+            """
+            SELECT id FROM inference_api_key 
+            WHERE api_key = $1 AND is_deleted = FALSE 
+            AND (expires_at IS NULL OR expires_at > NOW())
+            """,
+            api_key,
+        )
+        if not api_key_record:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid or expired API Key",
+            )
+
+        # 获取所有关联的模型记录
+        records = await conn.fetch(
+            """
+            SELECT 
+                im.model_name,
+                im.model_id,
+                id.deployment_url,
+                id.models_api_key
+            FROM inference_api_key_model iakm
+            JOIN inference_model im ON iakm.model_id = im.id
+            JOIN inference_deployment id ON im.inference_id = id.id
+            WHERE iakm.api_key_id = $1 
+            AND im.is_deleted = FALSE 
+            AND id.is_deleted = FALSE
+            """,
+            api_key_record["id"],
+        )
+
+        all_models = []
+        # 为每个record并行请求对应的/v1/models接口
+        async with httpx.AsyncClient() as client:
+            tasks = []
+            for r in records:
+                if not r["deployment_url"] or not r["models_api_key"]:
+                    continue
+
+                tasks.append(fetch_models_for_record(client, r))
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for result in results:
+                if isinstance(result, Exception):
+                    continue
+                all_models.extend(result)
+
+        return {"object": "list", "data": all_models}
+
+
+async def fetch_models_for_record(
+    client: httpx.AsyncClient, record: Dict
+) -> List[Dict]:
+    """为单个record获取并处理模型数据"""
+    try:
+        url = f"{record['deployment_url'].rstrip('/')}/v1/models"
+        headers = {"Authorization": f"Bearer {record['models_api_key']}"}
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        models_data = response.json()
+
+        matched_models = []
+        if "data" in models_data:
+            for model in models_data["data"]:
+                if model.get("id", "").endswith(record["model_id"]):
+                    # 替换id和root为数据库中的model_name
+                    model["id"] = record["model_name"]
+                    if "root" in model:
+                        model["root"] = record["model_name"]
+                    matched_models.append(model)
+
+        return matched_models
+
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP error for {url}: {e.response.status_code}")
+    except Exception as e:
+        print(f"Error fetching models from {url}: {str(e)}")
+
+    return []
 
 
 async def generate_response(
