@@ -136,82 +136,104 @@ async def create_multi_model_api_key(
 
 
 @router.get("/apikey", response_model=List[MultiModelApiKeyResponse])
-async def get_multi_model_api_keys(
-    request: Request,
-):
-    # 查询主API Key信息
-    query_keys = """
-    SELECT id, api_key_name, api_key, active_days, 
-           created_at, last_used_at, expires_at, is_deleted
-    FROM inference_api_key
-    WHERE is_deleted = FALSE
-    ORDER BY created_at DESC;
-    """
-
-    # 查询每个API Key的模型配额信息
-    query_quotas = """
-    SELECT iakm.api_key_id, iakm.model_id, im.model_name,
-           iakm.max_token_quota, iakm.max_prompt_tokens_quota, 
-           iakm.max_completion_tokens_quota, iakm.created_at
-    FROM inference_api_key_model iakm
-    JOIN inference_model im ON iakm.model_id = im.id
-    WHERE iakm.api_key_id = ANY($1::int[])
-    AND im.is_deleted = FALSE
-    ORDER BY iakm.created_at;
-    """
-
-    db = request.app.state.db_pool
-    async with db.acquire() as conn:
-        keys = await conn.fetch(query_keys)
-        if not keys:
-            return []
-
-        # 获取这些Key的所有模型配额
-        key_ids = [key["id"] for key in keys]
-        quotas = await conn.fetch(query_quotas, key_ids)
-
-        # 按API Key ID分组配额
-        quotas_by_key = {}
-        for quota in quotas:
-            key_id = quota["api_key_id"]
-            if key_id not in quotas_by_key:
-                quotas_by_key[key_id] = []
-            quotas_by_key[key_id].append(quota)
-
-    # 构建响应
-    response = []
-    for key in keys:
-        key_id = key["id"]
-        model_quotas = quotas_by_key.get(key_id, [])
-
-        response.append(
-            {
-                "id": key["id"],
-                "api_key_name": key["api_key_name"],
-                "api_key": key["api_key"],
-                "active_days": key["active_days"],
-                "created_at": key["created_at"].isoformat(),
-                "last_used_at": (
-                    key["last_used_at"].isoformat() if key["last_used_at"] else None
-                ),
-                "expires_at": (
-                    key["expires_at"].isoformat() if key["expires_at"] else None
-                ),
-                "model_quotas": [
-                    {
-                        "model_id": q["model_id"],
-                        "model_name": q["model_name"],
-                        "max_token_quota": q["max_token_quota"],
-                        "max_prompt_tokens_quota": q["max_prompt_tokens_quota"],
-                        "max_completion_tokens_quota": q["max_completion_tokens_quota"],
-                        "created_at": q["created_at"].isoformat(),
-                    }
-                    for q in model_quotas
-                ],
-            }
+async def get_multi_model_api_keys(request: Request):
+    async with request.app.state.db_pool.acquire() as conn:
+        # 使用COALESCE确保NULL值转为0
+        query = """
+        WITH api_keys AS (
+            SELECT id, api_key_name, api_key, active_days, 
+                   created_at, last_used_at, expires_at
+            FROM inference_api_key
+            WHERE is_deleted = FALSE
+            ORDER BY created_at DESC
+        ),
+        quotas AS (
+            SELECT 
+                iakm.api_key_id, 
+                iakm.model_id, 
+                im.model_name,
+                iakm.max_token_quota, 
+                iakm.max_prompt_tokens_quota, 
+                iakm.max_completion_tokens_quota, 
+                iakm.created_at
+            FROM inference_api_key_model iakm
+            JOIN inference_model im ON iakm.model_id = im.id
+            WHERE iakm.api_key_id IN (SELECT id FROM api_keys)
+            AND im.is_deleted = FALSE
         )
+        SELECT 
+            k.*,
+            q.model_id AS quota_model_id,
+            q.model_name,
+            q.max_token_quota,
+            q.max_prompt_tokens_quota,
+            q.max_completion_tokens_quota,
+            q.created_at AS quota_created_at,
+            COALESCE((
+                SELECT SUM(prompt_tokens) 
+                FROM inference_api_key_token_usage 
+                WHERE api_key_id = k.id AND model_id = q.model_id
+            ), 0) AS used_prompt_tokens,
+            COALESCE((
+                SELECT SUM(completion_tokens) 
+                FROM inference_api_key_token_usage 
+                WHERE api_key_id = k.id AND model_id = q.model_id
+            ), 0) AS used_completion_tokens,
+            COALESCE((
+                SELECT SUM(prompt_tokens + completion_tokens) 
+                FROM inference_api_key_token_usage 
+                WHERE api_key_id = k.id AND model_id = q.model_id
+            ), 0) AS used_total_tokens
+        FROM api_keys k
+        LEFT JOIN quotas q ON k.id = q.api_key_id
+        ORDER BY k.created_at DESC, q.created_at;
+        """
 
-    return response
+        records = await conn.fetch(query)
+
+        # 按API Key分组数据
+        response_map = {}
+        for record in records:
+            key_id = record["id"]
+
+            if key_id not in response_map:
+                response_map[key_id] = {
+                    "id": key_id,
+                    "api_key_name": record["api_key_name"],
+                    "api_key": record["api_key"],
+                    "active_days": record["active_days"],
+                    "created_at": record["created_at"].isoformat(),
+                    "last_used_at": (
+                        record["last_used_at"].isoformat()
+                        if record["last_used_at"]
+                        else None
+                    ),
+                    "expires_at": (
+                        record["expires_at"].isoformat()
+                        if record["expires_at"]
+                        else None
+                    ),
+                    "models": [],
+                }
+
+            if record["quota_model_id"]:  # 只添加有模型配额的数据
+                response_map[key_id]["models"].append(
+                    {
+                        "model_id": record["quota_model_id"],
+                        "model_name": record["model_name"],
+                        "max_token_quota": record["max_token_quota"],
+                        "max_prompt_tokens_quota": record["max_prompt_tokens_quota"],
+                        "max_completion_tokens_quota": record[
+                            "max_completion_tokens_quota"
+                        ],
+                        "used_prompt_tokens": record["used_prompt_tokens"],
+                        "used_completion_tokens": record["used_completion_tokens"],
+                        "used_total_tokens": record["used_total_tokens"],
+                        "created_at": record["quota_created_at"].isoformat(),
+                    }
+                )
+
+    return list(response_map.values())
 
 
 @router.patch("/apikey/{api_key_id}/delete")

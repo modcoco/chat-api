@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 import asyncpg
+import httpx
 from models import InferenceModelCreate
 from fastapi import HTTPException
 
@@ -9,7 +10,7 @@ from fastapi import HTTPException
 async def create_inference_model(conn, model: InferenceModelCreate):
     # 1. 检查部署是否存在且可用
     query_check_deployment = """
-    SELECT id, status, is_deleted 
+    SELECT id, status, is_deleted, deployment_url, models_api_key
     FROM inference_deployment 
     WHERE id = $1
     """
@@ -24,7 +25,40 @@ async def create_inference_model(conn, model: InferenceModelCreate):
             detail="Inference deployment is either deleted or not in active status.",
         )
 
-    # 2. 检查模型是否已注册（inference_id + model_id 唯一）
+    # 2. 检查模型是否在部署的模型列表中
+    try:
+        headers = {
+            "Authorization": f"Bearer {deployment['models_api_key']}",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{deployment['deployment_url']}/v1/models",
+                headers=headers,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            models_data = response.json()
+
+            # 检查model_id是否存在于返回的模型列表中
+            model_exists = any(
+                m["id"] == model.model_id for m in models_data.get("data", [])
+            )
+            if not model_exists:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Model ID {model.model_id} not found in the deployment's model list.",
+                )
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502, detail=f"Failed to fetch models from deployment: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error while validating model: {str(e)}"
+        )
+
+    # 3. 检查模型是否已注册（inference_id + model_id 唯一）
     query_check_existing = """
     SELECT id 
     FROM inference_model 
@@ -40,16 +74,16 @@ async def create_inference_model(conn, model: InferenceModelCreate):
             detail="Model already registered with this inference deployment.",
         )
 
-    # 3. 插入新模型
+    # 4. 插入新模型
     query = """
     INSERT INTO inference_model (
         model_name, visibility, inference_id, 
         model_id, max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, 
-        created_at, updated_at
+        created_at, updated_at, status
     ) 
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
     RETURNING id, model_name, visibility, inference_id, model_id, 
-              max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created_at, updated_at;
+              max_token_quota, max_prompt_tokens_quota, max_completion_tokens_quota, created_at, updated_at, status;
     """
 
     current_time = datetime.now()
@@ -65,6 +99,7 @@ async def create_inference_model(conn, model: InferenceModelCreate):
         model.max_completion_tokens_quota,
         current_time,  # created_at 字段
         current_time,  # updated_at 字段
+        "active",
     )
 
     result_dict = dict(result)

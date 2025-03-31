@@ -47,7 +47,8 @@ async def get_all_inference_services(
         im.max_prompt_tokens_quota,
         im.max_completion_tokens_quota,
         im.created_at,
-        im.updated_at
+        im.updated_at,
+        im.status
     FROM inference_model im
     JOIN inference_deployment idp ON im.inference_id = idp.id
     WHERE idp.is_deleted = FALSE AND im.is_deleted = FALSE;

@@ -84,6 +84,9 @@ class ModelQuotaResponse(BaseModel):
     max_token_quota: Optional[int] = None
     max_prompt_tokens_quota: Optional[int] = None
     max_completion_tokens_quota: Optional[int] = None
+    used_prompt_tokens: Optional[int] = None
+    used_completion_tokens: Optional[int] = None
+    used_total_tokens: Optional[int] = None
     created_at: str
 
 
@@ -97,4 +100,4 @@ class MultiModelApiKeyResponse(BaseModel):
     created_at: str
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
-    model_quotas: List[ModelQuotaResponse]
+    models: List[ModelQuotaResponse]
