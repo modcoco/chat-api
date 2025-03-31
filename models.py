@@ -54,31 +54,6 @@ class InferenceModelCreate(BaseModel):
         alias="maxCompletionTokensQuota", default=None
     )
 
-
-class InferenceModelApiKeyCreate(BaseModel):
-    inference_model_id: int
-    api_key_name: str
-    max_token_quota: int = None
-    max_prompt_tokens_quota: int = None
-    max_completion_tokens_quota: int = None
-    active_days: int = None  # active_days 默认是选填项
-
-
-class InferenceModelApiKeyResponse(BaseModel):
-    id: int
-    api_key_name: str
-    inference_model_id: int
-    api_key: str
-    max_token_quota: Optional[int] = None
-    max_prompt_tokens_quota: Optional[int] = None
-    max_completion_tokens_quota: Optional[int] = None
-    active_days: Optional[int] = None
-    created_at: str
-    last_used_at: Optional[str] = None
-    expires_at: Optional[str] = None
-    is_deleted: bool
-
-
 def to_camel(string: str) -> str:
     words = string.split("_")
     return words[0] + "".join(word.capitalize() for word in words[1:])
