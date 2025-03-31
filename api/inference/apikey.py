@@ -197,7 +197,6 @@ async def get_multi_model_api_keys(
                 "expires_at": (
                     key["expires_at"].isoformat() if key["expires_at"] else None
                 ),
-                "is_deleted": key["is_deleted"],
                 "model_quotas": [
                     {
                         "model_id": q["model_id"],

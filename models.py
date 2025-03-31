@@ -97,5 +97,4 @@ class MultiModelApiKeyResponse(BaseModel):
     created_at: str
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
-    is_deleted: bool
     model_quotas: List[ModelQuotaResponse]
