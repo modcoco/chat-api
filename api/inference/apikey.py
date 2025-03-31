@@ -22,7 +22,7 @@ async def create_multi_model_api_key(
     unique_id = uuid.uuid4().hex
     api_key = f"sk-{unique_id}"
 
-    # 计算过期时间
+    # Calculate expiration time
     expires_at = None
     if api_key_data.active_days:
         expires_at = datetime.now() + timedelta(days=api_key_data.active_days)
@@ -30,9 +30,9 @@ async def create_multi_model_api_key(
     created_at_time = datetime.now()
 
     async with db.acquire() as conn:
-        # 开始事务
+        # Start transaction
         async with conn.transaction():
-            # 1. 创建主API Key记录
+            # 1. Create main API Key record
             query_insert_key = """
             INSERT INTO inference_api_key (
                 api_key_name, api_key, active_days, created_at, expires_at
@@ -50,12 +50,12 @@ async def create_multi_model_api_key(
                 expires_at,
             )
 
-            # 2. 为每个模型创建配额记录
+            # 2. Create quota records for each model
             key_id = key_result["id"]
-            model_responses = []
+            models = []
 
             for model_quota in api_key_data.model_quotas:
-                # 检查模型是否存在且有效
+                # Check if model exists and is valid
                 query_check_model = """
                 SELECT im.id, im.model_name, idp.is_deleted as idp_is_deleted, idp.status
                 FROM inference_model im
@@ -84,7 +84,7 @@ async def create_multi_model_api_key(
                         detail=f"The associated inference deployment for model {model_quota.model_id} is not active",
                     )
 
-                # 插入模型配额记录
+                # Insert model quota record
                 query_insert_quota = """
                 INSERT INTO inference_api_key_model (
                     api_key_id, model_id, 
@@ -93,7 +93,7 @@ async def create_multi_model_api_key(
                 ) 
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id, model_id, max_token_quota, max_prompt_tokens_quota, 
-                          max_completion_tokens_quota, created_at;
+                          max_completion_tokens_quota, created_at, is_deleted;
                 """
                 quota_result = await conn.fetchrow(
                     query_insert_quota,
@@ -105,7 +105,7 @@ async def create_multi_model_api_key(
                     created_at_time,
                 )
 
-                model_responses.append(
+                models.append(
                     {
                         "model_id": quota_result["model_id"],
                         "model_name": model_result["model_name"],
@@ -117,10 +117,11 @@ async def create_multi_model_api_key(
                             "max_completion_tokens_quota"
                         ],
                         "created_at": quota_result["created_at"].isoformat(),
+                        "is_deleted": quota_result["is_deleted"],
                     }
                 )
 
-    # 构建响应
+    # Build response
     return {
         "id": key_result["id"],
         "api_key_name": key_result["api_key_name"],
@@ -131,7 +132,7 @@ async def create_multi_model_api_key(
             key_result["expires_at"].isoformat() if key_result["expires_at"] else None
         ),
         "is_deleted": key_result["is_deleted"],
-        "model_quotas": model_responses,
+        "models": models,  # Changed from model_quotas to models
     }
 
 
