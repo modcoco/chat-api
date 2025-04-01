@@ -230,6 +230,7 @@ async def get_models_by_api_key(
             AND iakm.is_deleted = FALSE
             AND im.is_deleted = FALSE 
             AND id.is_deleted = FALSE
+            AND im.status = 'active'
             """,
             api_key_record["id"],
         )
