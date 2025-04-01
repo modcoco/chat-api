@@ -7,7 +7,7 @@ from fastapi.security import APIKeyHeader
 from fastapi.responses import StreamingResponse
 import httpx
 import tiktoken
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 from datetime import datetime, timezone
 
 from app.inference_api_key import get_api_key_id_by_key, update_last_used_at
@@ -111,9 +111,9 @@ async def proxy_openai(
         print(deployment_info)
         client = get_client(deployment_url + "/v1", models_api_key)
         body.model = model_path
-        body.temperature = 0
-        body.stream = True
-        body.stream_options = StreamOptions(include_usage=True)
+        # body.temperature = 0
+        # body.stream = True
+        # body.stream_options = StreamOptions(include_usage=True)
         body_data = {
             key: value for key, value in body.model_dump().items() if value is not None
         }
@@ -256,12 +256,33 @@ async def fetch_models_for_record(
 
 async def generate_response(
     request, response, encoder, total_tokens, model_id, current_model, api_key_id
-):
+) -> AsyncGenerator[str, None]:
     try:
         for chunk in response:
-            if chunk.usage is not None:
-                total_tokens["prompt"] = chunk.usage.prompt_tokens
-                total_tokens["completion"] = chunk.usage.completion_tokens
+            print("Chunk:", chunk)
+
+            # 处理元组形式的chunk
+            if isinstance(chunk, tuple) and len(chunk) >= 2:
+                chunk_id = chunk[1] if chunk[0] == "id" else None
+                # 创建一个简单的模拟对象
+                chunk = type(
+                    "SimpleChunk",
+                    (),
+                    {
+                        "id": chunk_id,
+                        "usage": None,
+                        "choices": [],
+                        "object": "chat.completion.chunk",
+                        "delta": type("Delta", (), {"content": None}),
+                    },
+                )()
+
+            # 处理usage
+            if hasattr(chunk, "usage") and chunk.usage is not None:
+                total_tokens["prompt"] = getattr(chunk.usage, "prompt_tokens", 0)
+                total_tokens["completion"] = getattr(
+                    chunk.usage, "completion_tokens", 0
+                )
                 print(f"Total Prompt Tokens: {total_tokens['prompt']}")
                 print(f"Total Completion Tokens: {total_tokens['completion']}")
 
@@ -278,11 +299,17 @@ async def generate_response(
                 )
                 break
 
-            for choice in chunk.choices:
-                if choice.delta.content:
-                    total_tokens["completion"] += len(
-                        encoder.encode(choice.delta.content)
-                    )
+            # 处理choices
+            if hasattr(chunk, "choices"):
+                for choice in chunk.choices:
+                    if (
+                        hasattr(choice, "delta")
+                        and hasattr(choice.delta, "content")
+                        and choice.delta.content
+                    ):
+                        total_tokens["completion"] += len(
+                            encoder.encode(choice.delta.content)
+                        )
 
             if await request.is_disconnected():
                 print("客户端主动断开连接")
@@ -295,51 +322,64 @@ async def generate_response(
                 await token_usage_queue.put(
                     (
                         model_id,
-                        chunk.id,
-                        api_key_id,  # api-key-id
+                        chunk.id if hasattr(chunk, "id") else "unknown",
+                        api_key_id,
                         total_tokens["prompt"],
                         total_tokens["completion"],
                         "interrupted",
                     )
                 )
-
                 return
 
-            # chunk.model
-            chunk_data = ChatCompletionChunk(
-                id=chunk.id,
-                object=chunk.object,
-                created=int(time.time()),
-                model=current_model,
-                choices=[
-                    Choice(
-                        index=choice.index,
-                        delta=ChoiceDelta(
-                            content=choice.delta.content,
-                            function_call=choice.delta.function_call,
-                            refusal=choice.delta.refusal,
-                            role=choice.delta.role,
-                            tool_calls=choice.delta.tool_calls,
-                        ),
-                        finish_reason=choice.finish_reason,
-                        stop_reason=getattr(choice, "stop_reason", None),
-                    )
-                    for choice in chunk.choices
+            # 构造 chunk_data
+            chunk_data = {
+                "id": getattr(chunk, "id", "unknown"),
+                "object": getattr(chunk, "object", "chat.completion.chunk"),
+                "created": int(time.time()),
+                "model": current_model,
+                "choices": [
+                    {
+                        "index": getattr(choice, "index", 0),
+                        "delta": {
+                            "content": getattr(
+                                getattr(choice, "delta", None), "content", None
+                            ),
+                            "function_call": getattr(
+                                getattr(choice, "delta", None), "function_call", None
+                            ),
+                            "refusal": getattr(
+                                getattr(choice, "delta", None), "refusal", None
+                            ),
+                            "role": getattr(
+                                getattr(choice, "delta", None), "role", None
+                            ),
+                            "tool_calls": getattr(
+                                getattr(choice, "delta", None), "tool_calls", None
+                            ),
+                        },
+                        "finish_reason": getattr(choice, "finish_reason", None),
+                        "stop_reason": getattr(choice, "stop_reason", None),
+                    }
+                    for choice in getattr(chunk, "choices", [])
                 ],
-                usage=chunk.usage,
-            )
+                "usage": getattr(chunk, "usage", None),
+            }
 
+            # 转换为 JSON 字符串
             chunk_json = json.dumps(
-                chunk_data.to_dict(),
+                chunk_data,
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-            yield f"data: {chunk_json}\n\n".encode("utf-8")
 
-            if chunk.choices and any(
-                choice.finish_reason == "stop" for choice in chunk.choices
+            yield f"data: {chunk_json}\n\n"
+
+            if hasattr(chunk, "choices") and any(
+                getattr(choice, "finish_reason", None) == "stop"
+                for choice in chunk.choices
             ):
-                yield "data: [DONE]\n\n".encode("utf-8")
+                yield "data: [DONE]\n\n"
+
     except Exception as e:
         print(f"Error in generate_response: {e}")
         raise
