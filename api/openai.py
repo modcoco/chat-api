@@ -4,7 +4,7 @@ import json
 import time
 from fastapi import APIRouter, Depends, Request, Header, HTTPException, status
 from fastapi.security import APIKeyHeader
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 import httpx
 import tiktoken
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -120,18 +120,49 @@ async def proxy_openai(
         print("body_data", body_data)
         response = client.chat.completions.create(**body_data)
 
-        return StreamingResponse(
-            generate_response(
-                request,
-                response,
-                encoder,
-                total_tokens,
-                model_id,
-                current_model,
-                api_key_id,
-            ),
-            media_type="text/event-stream",
-        )
+        if body_data.get("stream", False):
+            # Return streaming response
+            return StreamingResponse(
+                generate_response(
+                    request,
+                    response,
+                    encoder,
+                    total_tokens,
+                    model_id,
+                    current_model,
+                    api_key_id,
+                ),
+                media_type="text/event-stream",
+            )
+        else:
+            # Return regular JSON response
+            # Convert the response to a dictionary if it's not already
+            if hasattr(response, "dict"):
+                response_data = response.dict()
+            else:
+                response_data = response
+
+            # Update token counts for non-streaming response
+            if hasattr(response, "usage"):
+                total_tokens["prompt"] = getattr(response.usage, "prompt_tokens", 0)
+                total_tokens["completion"] = getattr(
+                    response.usage, "completion_tokens", 0
+                )
+
+                # Record token usage
+                token_usage_queue = request.app.state.token_usage_queue
+                await token_usage_queue.put(
+                    (
+                        model_id,
+                        response.id if hasattr(response, "id") else "unknown",
+                        api_key_id,
+                        total_tokens["prompt"],
+                        total_tokens["completion"],
+                        "completed",
+                    )
+                )
+
+            return JSONResponse(response_data)
 
     except Exception as e:
         print(f"Error: {e}")
@@ -259,23 +290,7 @@ async def generate_response(
 ) -> AsyncGenerator[str, None]:
     try:
         for chunk in response:
-            print("Chunk:", chunk)
-
-            # 处理元组形式的chunk
-            if isinstance(chunk, tuple) and len(chunk) >= 2:
-                chunk_id = chunk[1] if chunk[0] == "id" else None
-                # 创建一个简单的模拟对象
-                chunk = type(
-                    "SimpleChunk",
-                    (),
-                    {
-                        "id": chunk_id,
-                        "usage": None,
-                        "choices": [],
-                        "object": "chat.completion.chunk",
-                        "delta": type("Delta", (), {"content": None}),
-                    },
-                )()
+            # print("[DEBUG] Chunk:", chunk)
 
             # 处理usage
             if hasattr(chunk, "usage") and chunk.usage is not None:
