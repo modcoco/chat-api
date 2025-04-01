@@ -158,4 +158,7 @@ CREATE TABLE
 # 请求参数完全适配
 # 返回参数完全适配
 # 记token方案
+
+pip install pipreqs
+pipreqs /path/to/your/project --force
 ```
