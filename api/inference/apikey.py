@@ -499,6 +499,7 @@ async def get_multi_model_api_keys(
                 iakm.api_key_id, 
                 iakm.model_id, 
                 im.model_name,
+                im.status AS model_status,
                 iakm.max_token_quota, 
                 iakm.max_prompt_tokens_quota, 
                 iakm.max_completion_tokens_quota, 
@@ -526,6 +527,7 @@ async def get_multi_model_api_keys(
             q.relation_id,
             q.model_id AS quota_model_id,
             q.model_name,
+            q.model_status,
             q.max_token_quota,
             q.max_prompt_tokens_quota,
             q.max_completion_tokens_quota,
@@ -596,6 +598,7 @@ async def get_multi_model_api_keys(
                         "relation_id": record["relation_id"],
                         "model_id": record["quota_model_id"],
                         "model_name": record["model_name"],
+                        "model_status": record["model_status"],
                         "max_token_quota": record["max_token_quota"],
                         "max_prompt_tokens_quota": record["max_prompt_tokens_quota"],
                         "max_completion_tokens_quota": record[

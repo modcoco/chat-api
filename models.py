@@ -84,6 +84,7 @@ class ModelQuotaResponse(BaseModel):
     relation_id: int
     model_id: int
     model_name: str
+    model_status: str
     max_token_quota: Optional[int] = None
     max_prompt_tokens_quota: Optional[int] = None
     max_completion_tokens_quota: Optional[int] = None
