@@ -289,10 +289,12 @@ async def generate_response(
     request, response, encoder, total_tokens, model_id, current_model, api_key_id
 ) -> AsyncGenerator[str, None]:
     try:
+        last_chunk_id = None
         for chunk in response:
             # print("[DEBUG] Chunk:", chunk)
+            last_chunk_id = getattr(chunk, "id", "unknown")
 
-            # 处理usage
+            # 优先使用 usage 记录token
             if hasattr(chunk, "usage") and chunk.usage is not None:
                 total_tokens["prompt"] = getattr(chunk.usage, "prompt_tokens", 0)
                 total_tokens["completion"] = getattr(
@@ -300,19 +302,6 @@ async def generate_response(
                 )
                 print(f"Total Prompt Tokens: {total_tokens['prompt']}")
                 print(f"Total Completion Tokens: {total_tokens['completion']}")
-
-                token_usage_queue = request.app.state.token_usage_queue
-                await token_usage_queue.put(
-                    (
-                        model_id,
-                        chunk.id,
-                        api_key_id,
-                        total_tokens["prompt"],
-                        total_tokens["completion"],
-                        "completed",
-                    )
-                )
-                break
 
             # 处理choices
             if hasattr(chunk, "choices"):
@@ -337,7 +326,7 @@ async def generate_response(
                 await token_usage_queue.put(
                     (
                         model_id,
-                        chunk.id if hasattr(chunk, "id") else "unknown",
+                        last_chunk_id,
                         api_key_id,
                         total_tokens["prompt"],
                         total_tokens["completion"],
@@ -346,9 +335,8 @@ async def generate_response(
                 )
                 return
 
-            # 构造 chunk_data
             chunk_data = {
-                "id": getattr(chunk, "id", "unknown"),
+                "id": last_chunk_id,
                 "object": getattr(chunk, "object", "chat.completion.chunk"),
                 "created": int(time.time()),
                 "model": current_model,
@@ -380,7 +368,6 @@ async def generate_response(
                 "usage": getattr(chunk, "usage", None),
             }
 
-            # 转换为 JSON 字符串
             chunk_json = json.dumps(
                 chunk_data,
                 ensure_ascii=False,
@@ -393,8 +380,32 @@ async def generate_response(
                 getattr(choice, "finish_reason", None) == "stop"
                 for choice in chunk.choices
             ):
+                # 当流结束时记录token使用情况
+                token_usage_queue = request.app.state.token_usage_queue
+                await token_usage_queue.put(
+                    (
+                        model_id,
+                        last_chunk_id,
+                        api_key_id,
+                        total_tokens["prompt"],
+                        total_tokens["completion"],
+                        "completed",
+                    )
+                )
                 yield "data: [DONE]\n\n"
 
     except Exception as e:
         print(f"Error in generate_response: {e}")
+        if last_chunk_id:
+            token_usage_queue = request.app.state.token_usage_queue
+            await token_usage_queue.put(
+                (
+                    model_id,
+                    last_chunk_id,
+                    api_key_id,
+                    total_tokens["prompt"],
+                    total_tokens["completion"],
+                    "error",
+                )
+            )
         raise
