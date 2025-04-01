@@ -30,6 +30,7 @@ CREATE TABLE
         updated_at TIMESTAMP, -- 更新时间
         deleted_at TIMESTAMP, -- 删除时间
         is_deleted BOOLEAN NOT NULL DEFAULT FALSE, -- 是否被删除（默认未删除）
+        status VARCHAR(50) NOT NULL, -- 模型的状态（如 active, inactive, maintenance）
         FOREIGN KEY (inference_id) REFERENCES inference_deployment (id) ON DELETE CASCADE -- 外键约束，删除推理服务时级联删除用户推理服务关系
     );
 
@@ -46,6 +47,7 @@ CREATE TABLE
         is_deleted BOOLEAN NOT NULL DEFAULT FALSE
     );
 
+-- API key and model relationship
 CREATE TABLE
     inference_api_key_model (
         id SERIAL PRIMARY KEY,
@@ -56,9 +58,10 @@ CREATE TABLE
         max_completion_tokens_quota INT,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP,
+        deleted_at TIMESTAMP,
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
         FOREIGN KEY (api_key_id) REFERENCES inference_api_key (id) ON DELETE CASCADE,
-        FOREIGN KEY (model_id) REFERENCES inference_model (id) ON DELETE CASCADE,
-        UNIQUE (api_key_id, model_id)
+        FOREIGN KEY (model_id) REFERENCES inference_model (id) ON DELETE CASCADE
     );
 
 CREATE TABLE
@@ -73,4 +76,27 @@ CREATE TABLE
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (api_key_id) REFERENCES inference_api_key (id) ON DELETE CASCADE,
         FOREIGN KEY (model_id) REFERENCES inference_model (id) ON DELETE CASCADE
+    );
+
+-- API key lables
+CREATE TABLE
+    api_key_tag (
+        id SERIAL PRIMARY KEY,
+        tag_name VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMP,
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        UNIQUE (tag_name)
+    );
+
+CREATE TABLE
+    api_key_tag_association (
+        api_key_id INT NOT NULL,
+        tag_id INT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        deleted_at TIMESTAMP,
+        is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+        PRIMARY KEY (api_key_id, tag_id),
+        FOREIGN KEY (api_key_id) REFERENCES inference_api_key (id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES api_key_tag (id) ON DELETE RESTRICT
     );

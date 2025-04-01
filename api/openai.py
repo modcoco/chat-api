@@ -60,6 +60,7 @@ async def proxy_openai(
     await update_last_used_at(api_key, db)
 
     # Use Model
+    current_model = body.model
     print(f"Use Model: {body.model}")
     model_info = await get_model_info_by_api_key_and_model_name(api_key, body.model, db)
     if model_info is None:
@@ -121,7 +122,13 @@ async def proxy_openai(
 
         return StreamingResponse(
             generate_response(
-                request, response, encoder, total_tokens, model_id, api_key_id
+                request,
+                response,
+                encoder,
+                total_tokens,
+                model_id,
+                current_model,
+                api_key_id,
             ),
             media_type="text/event-stream",
         )
@@ -248,7 +255,7 @@ async def fetch_models_for_record(
 
 
 async def generate_response(
-    request, response, encoder, total_tokens, model_id, api_key_id
+    request, response, encoder, total_tokens, model_id, current_model, api_key_id
 ):
     try:
         for chunk in response:
@@ -298,11 +305,12 @@ async def generate_response(
 
                 return
 
+            # chunk.model
             chunk_data = ChatCompletionChunk(
                 id=chunk.id,
                 object=chunk.object,
                 created=int(time.time()),
-                model=chunk.model,
+                model=current_model,
                 choices=[
                     Choice(
                         index=choice.index,

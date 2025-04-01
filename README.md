@@ -45,9 +45,9 @@ curl --noproxy '*' -X POST "http://localhost:30080/v1/chat/completions" \
 
 curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
         -H "Content-Type: application/json" \
-        -H "Authorization: Bearer sk-multi-d32e0555882d4518a3fd40bd2340d1a4" \
+        -H "Authorization: Bearer sk-bebaffa021754b5890d9661fd8b0d9ee" \
         --data '{
-                "model": "deepseek-r1-distill-qwen-32b",
+                "model": "deepseek-v3-0324",
                 "stream": true,
                 "messages": [
                         {
@@ -56,6 +56,8 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
                         }
                 ]
         }'
+
+curl http://localhost:5000/v1/models -H "Authorization: Bearer sk-bebaffa021754b5890d9661fd8b0d9ee"
 
 curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
         -H "Content-Type: application/json" \
@@ -69,6 +71,15 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
                                 "content": "你好，请问你是谁？"
                         }
                 ]
+        }'
+
+curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer sk-bebaffa021754b5890d9661fd8b0d9ee" \
+        --data '{
+                "model": "deepseek-r1-distill-llama-70b",
+                "stream": true,
+                "messages": [{"content": "hi", "role": "user"}]
         }'
 ```
 
@@ -148,6 +159,3 @@ CREATE TABLE
 # 返回参数完全适配
 # 记token方案
 ```
-
-
--- 归属

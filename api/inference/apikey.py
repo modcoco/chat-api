@@ -23,6 +23,15 @@ async def create_multi_model_api_key(
     request: Request,
     api_key_data: MultiModelApiKeyCreate,
 ):
+    # Check for duplicate model_ids in the request
+    model_ids = [quota.model_id for quota in api_key_data.model_quotas]
+    if len(model_ids) != len(set(model_ids)):
+        duplicate_ids = [mid for mid in model_ids if model_ids.count(mid) > 1]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Duplicate model_ids found in request: {list(set(duplicate_ids))}. Each model_id must be unique.",
+        )
+
     db = request.app.state.db_pool
     unique_id = uuid.uuid4().hex
     api_key = f"sk-{unique_id}"
@@ -129,7 +138,7 @@ async def create_multi_model_api_key(
 
                 models.append(
                     {
-                        "relationId": quota_result["relation_id"],  # Added
+                        "relationId": quota_result["relation_id"],
                         "model_id": quota_result["model_id"],
                         "model_name": model_result["model_name"],
                         "max_token_quota": quota_result["max_token_quota"],
@@ -139,7 +148,7 @@ async def create_multi_model_api_key(
                         "max_completion_tokens_quota": quota_result[
                             "max_completion_tokens_quota"
                         ],
-                        "modelStatus": model_result["status"],  # Added
+                        "modelStatus": model_result["status"],
                         "created_at": quota_result["created_at"].isoformat(),
                         "is_deleted": quota_result["is_deleted"],
                     }
@@ -157,7 +166,7 @@ async def create_multi_model_api_key(
         ),
         "is_deleted": key_result["is_deleted"],
         "models": models,
-        "tags": [],  # Added empty tags array if not implemented yet
+        "tags": [],
     }
 
 
@@ -295,11 +304,12 @@ async def add_models_to_api_key(
                 iakm.id as relation_id, 
                 iakm.model_id, 
                 im.model_name,
+                im.status as model_status,
                 iakm.max_token_quota, 
                 iakm.max_prompt_tokens_quota, 
                 iakm.max_completion_tokens_quota, 
                 iakm.created_at,
-                0 as used_prompt_tokens,  -- 默认值设为0
+                0 as used_prompt_tokens,
                 0 as used_completion_tokens,
                 0 as used_total_tokens
             FROM inference_api_key_model iakm
@@ -324,6 +334,7 @@ async def add_models_to_api_key(
                 "relation_id": m["relation_id"],
                 "model_id": m["model_id"],
                 "model_name": m["model_name"],
+                "model_status": m["model_status"],
                 "max_token_quota": m["max_token_quota"],
                 "max_prompt_tokens_quota": m["max_prompt_tokens_quota"],
                 "max_completion_tokens_quota": m["max_completion_tokens_quota"],
