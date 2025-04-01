@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi import status
@@ -7,6 +7,8 @@ from fastapi import status
 from models import (
     MultiModelApiKeyCreate,
     MultiModelApiKeyResponse,
+    QuotaUpdateRequest,
+    QuotaUpdateResponse,
 )
 
 
@@ -136,10 +138,96 @@ async def create_multi_model_api_key(
     }
 
 
+
+@router.patch("/api-key-model/{relation_id}/quotas", response_model=QuotaUpdateResponse)
+async def update_api_key_model_quotas(
+    request: Request,
+    relation_id: int,
+    quota_data: QuotaUpdateRequest
+):
+    """
+    Update quota limits for an API key-model relation
+    
+    Parameters:
+    - relation_id: The ID from inference_api_key_model table
+    - quota_data: JSON body containing any of these optional fields:
+        - max_token_quota
+        - max_prompt_tokens_quota  
+        - max_completion_tokens_quota
+    
+    At least one quota field must be provided.
+    """
+    # Convert model to dict and remove unset fields
+    update_data = quota_data.dict(exclude_unset=True)
+    
+    # Validate at least one field was provided
+    if not update_data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one quota field must be provided for update"
+        )
+
+    # Build dynamic update query
+    updates = []
+    params = []
+    
+    # Add fields that were provided
+    if 'max_token_quota' in update_data:
+        updates.append("max_token_quota = $1")
+        params.append(update_data['max_token_quota'])
+    
+    if 'max_prompt_tokens_quota' in update_data:
+        position = len(params) + 1
+        updates.append(f"max_prompt_tokens_quota = ${position}")
+        params.append(update_data['max_prompt_tokens_quota'])
+    
+    if 'max_completion_tokens_quota' in update_data:
+        position = len(params) + 1
+        updates.append(f"max_completion_tokens_quota = ${position}")
+        params.append(update_data['max_completion_tokens_quota'])
+    
+    # Add timestamp update
+    updates.append("updated_at = NOW()")
+    
+    # Build final query
+    query = f"""
+        UPDATE inference_api_key_model
+        SET {', '.join(updates)}
+        WHERE id = ${len(params) + 1} AND is_deleted = FALSE
+        RETURNING 
+            id,
+            api_key_id,
+            model_id,
+            max_token_quota,
+            max_prompt_tokens_quota,
+            max_completion_tokens_quota,
+            updated_at;
+    """
+    params.append(relation_id)
+
+    # Execute query
+    db = request.app.state.db_pool
+    async with db.acquire() as conn:
+        result = await conn.fetchrow(query, *params)
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="API key-model relation not found or already deleted"
+            )
+
+    return {
+        "id": result["id"],
+        "api_key_id": result["api_key_id"],
+        "model_id": result["model_id"],
+        "max_token_quota": result["max_token_quota"],
+        "max_prompt_tokens_quota": result["max_prompt_tokens_quota"],
+        "max_completion_tokens_quota": result["max_completion_tokens_quota"],
+        "updated_at": result["updated_at"],
+    }
+
 @router.get("/apikey", response_model=List[MultiModelApiKeyResponse])
 async def get_multi_model_api_keys(request: Request):
     async with request.app.state.db_pool.acquire() as conn:
-        # 使用COALESCE确保NULL值转为0
         query = """
         WITH api_keys AS (
             SELECT id, api_key_name, api_key, active_days, 
@@ -150,6 +238,7 @@ async def get_multi_model_api_keys(request: Request):
         ),
         quotas AS (
             SELECT 
+                iakm.id AS relation_id,  -- Add this line to get the relation ID
                 iakm.api_key_id, 
                 iakm.model_id, 
                 im.model_name,
@@ -160,10 +249,12 @@ async def get_multi_model_api_keys(request: Request):
             FROM inference_api_key_model iakm
             JOIN inference_model im ON iakm.model_id = im.id
             WHERE iakm.api_key_id IN (SELECT id FROM api_keys)
+            AND iakm.is_deleted = FALSE  -- Added this condition
             AND im.is_deleted = FALSE
         )
         SELECT 
             k.*,
+            q.relation_id,  -- Include relation_id in the SELECT
             q.model_id AS quota_model_id,
             q.model_name,
             q.max_token_quota,
@@ -217,9 +308,10 @@ async def get_multi_model_api_keys(request: Request):
                     "models": [],
                 }
 
-            if record["quota_model_id"]:  # 只添加有模型配额的数据
+            if record["quota_model_id"]:
                 response_map[key_id]["models"].append(
                     {
+                        "relation_id": record["relation_id"],  # Add relation_id here
                         "model_id": record["quota_model_id"],
                         "model_name": record["model_name"],
                         "max_token_quota": record["max_token_quota"],
@@ -242,27 +334,40 @@ async def delete_multi_model_api_key(
     request: Request,
     api_key_id: int,
 ):
-    query_check = """
-    SELECT id FROM inference_api_key 
-    WHERE id = $1 AND is_deleted = FALSE;
-    """
-
-    update_query = """
-    UPDATE inference_api_key
-    SET is_deleted = TRUE, deleted_at = NOW()
-    WHERE id = $1
-    RETURNING id, is_deleted;
-    """
-
     db = request.app.state.db_pool
     async with db.acquire() as conn:
-        result = await conn.fetchrow(query_check, api_key_id)
-        if not result:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="API key not found or already deleted",
+        # Start a transaction
+        async with conn.transaction():
+            # Check if API key exists and is not already deleted
+            result = await conn.fetchrow(
+                "SELECT id FROM inference_api_key WHERE id = $1 AND is_deleted = FALSE;",
+                api_key_id,
+            )
+            if not result:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="API key not found or already deleted",
+                )
+
+            # Mark all associated models as deleted first
+            await conn.execute(
+                """
+                UPDATE inference_api_key_model
+                SET is_deleted = TRUE, deleted_at = NOW()
+                WHERE api_key_id = $1 AND is_deleted = FALSE;
+                """,
+                api_key_id,
             )
 
-        updated_result = await conn.fetchrow(update_query, api_key_id)
+            # Then mark the API key as deleted
+            updated_result = await conn.fetchrow(
+                """
+                UPDATE inference_api_key
+                SET is_deleted = TRUE, deleted_at = NOW()
+                WHERE id = $1
+                RETURNING id, is_deleted;
+                """,
+                api_key_id,
+            )
 
     return {"id": updated_result["id"], "isDeleted": updated_result["is_deleted"]}

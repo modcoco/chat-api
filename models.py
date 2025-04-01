@@ -1,4 +1,5 @@
 # models.py
+from datetime import datetime
 from pydantic import BaseModel, field_validator, ConfigDict, Field
 from typing import Optional, List
 
@@ -54,6 +55,7 @@ class InferenceModelCreate(BaseModel):
         alias="maxCompletionTokensQuota", default=None
     )
 
+
 def to_camel(string: str) -> str:
     words = string.split("_")
     return words[0] + "".join(word.capitalize() for word in words[1:])
@@ -79,6 +81,7 @@ class MultiModelApiKeyCreate(BaseModel):
 class ModelQuotaResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
+    relation_id: int
     model_id: int
     model_name: str
     max_token_quota: Optional[int] = None
@@ -101,3 +104,19 @@ class MultiModelApiKeyResponse(BaseModel):
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
     models: List[ModelQuotaResponse]
+
+# Request model for quota updates
+class QuotaUpdateRequest(BaseModel):
+    max_token_quota: Optional[int] = None
+    max_prompt_tokens_quota: Optional[int] = None
+    max_completion_tokens_quota: Optional[int] = None
+
+# Response model
+class QuotaUpdateResponse(BaseModel):
+    id: int
+    api_key_id: int
+    model_id: int
+    max_token_quota: Optional[int]
+    max_prompt_tokens_quota: Optional[int]
+    max_completion_tokens_quota: Optional[int]
+    updated_at: datetime

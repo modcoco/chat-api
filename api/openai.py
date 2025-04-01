@@ -189,6 +189,7 @@ async def get_models_by_api_key(
             JOIN inference_model im ON iakm.model_id = im.id
             JOIN inference_deployment id ON im.inference_id = id.id
             WHERE iakm.api_key_id = $1 
+            AND iakm.is_deleted = FALSE
             AND im.is_deleted = FALSE 
             AND id.is_deleted = FALSE
             """,
