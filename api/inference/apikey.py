@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from typing import List, Optional
 import uuid
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi import status
 
 from models import (
@@ -463,14 +463,34 @@ async def update_api_key_model_quotas(
 
 
 @router.get("/apikey", response_model=List[MultiModelApiKeyResponse])
-async def get_multi_model_api_keys(request: Request):
+async def get_multi_model_api_keys(
+    request: Request,
+    tag: Optional[List[str]] = Query(None, description="Filter by tag names"),
+):
     async with request.app.state.db_pool.acquire() as conn:
-        query = """
+        # 基础CTE查询
+        base_query = """
         WITH api_keys AS (
             SELECT id, api_key_name, api_key, active_days, 
                    created_at, last_used_at, expires_at
             FROM inference_api_key
             WHERE is_deleted = FALSE
+        """
+
+        # 如果有标签过滤条件
+        if tag:
+            base_query += """
+            AND id IN (
+                SELECT DISTINCT akta.api_key_id
+                FROM api_key_tag_association akta
+                JOIN api_key_tag akt ON akta.tag_id = akt.id
+                WHERE akt.tag_name = ANY($1)
+                AND akta.is_deleted = FALSE
+                AND akt.is_deleted = FALSE
+            )
+            """
+
+        base_query += """
             ORDER BY created_at DESC
         ),
         quotas AS (
@@ -534,9 +554,13 @@ async def get_multi_model_api_keys(request: Request):
         ORDER BY k.created_at DESC, q.created_at, kt.tag_created_at;
         """
 
-        records = await conn.fetch(query)
+        # 执行查询（根据是否有标签参数决定参数传递）
+        if tag:
+            records = await conn.fetch(base_query, tag)
+        else:
+            records = await conn.fetch(base_query)
 
-        # 按API Key分组数据
+        # 按API Key分组数据（保持不变）
         response_map = {}
         for record in records:
             key_id = record["id"]
@@ -559,7 +583,7 @@ async def get_multi_model_api_keys(request: Request):
                         else None
                     ),
                     "models": [],
-                    "tags": [],  # 新增标签字段
+                    "tags": [],
                 }
 
             # 添加模型信息
