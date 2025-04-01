@@ -89,6 +89,23 @@ async def create_multi_model_api_key(
                         detail=f"The associated inference deployment for model {model_quota.model_id} is not active",
                     )
 
+                # Prepare quota values - set to None if -1
+                max_token_quota = (
+                    model_quota.max_token_quota
+                    if model_quota.max_token_quota != -1
+                    else None
+                )
+                max_prompt_tokens_quota = (
+                    model_quota.max_prompt_tokens_quota
+                    if model_quota.max_prompt_tokens_quota != -1
+                    else None
+                )
+                max_completion_tokens_quota = (
+                    model_quota.max_completion_tokens_quota
+                    if model_quota.max_completion_tokens_quota != -1
+                    else None
+                )
+
                 # Insert model quota record
                 query_insert_quota = """
                 INSERT INTO inference_api_key_model (
@@ -104,9 +121,9 @@ async def create_multi_model_api_key(
                     query_insert_quota,
                     key_id,
                     model_quota.model_id,
-                    model_quota.max_token_quota,
-                    model_quota.max_prompt_tokens_quota,
-                    model_quota.max_completion_tokens_quota,
+                    max_token_quota,
+                    max_prompt_tokens_quota,
+                    max_completion_tokens_quota,
                     created_at_time,
                 )
 
