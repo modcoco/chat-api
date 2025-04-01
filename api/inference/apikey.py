@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi import status
 
 from models import (
+    ApiKeyTagResponse,
     DeleteApiKeyModelRelationResponse,
     ModelQuota,
     MultiModelApiKeyCreate,
@@ -474,7 +475,7 @@ async def get_multi_model_api_keys(request: Request):
         ),
         quotas AS (
             SELECT 
-                iakm.id AS relation_id,  -- Add this line to get the relation ID
+                iakm.id AS relation_id,
                 iakm.api_key_id, 
                 iakm.model_id, 
                 im.model_name,
@@ -485,18 +486,33 @@ async def get_multi_model_api_keys(request: Request):
             FROM inference_api_key_model iakm
             JOIN inference_model im ON iakm.model_id = im.id
             WHERE iakm.api_key_id IN (SELECT id FROM api_keys)
-            AND iakm.is_deleted = FALSE  -- Added this condition
+            AND iakm.is_deleted = FALSE
             AND im.is_deleted = FALSE
+        ),
+        key_tags AS (
+            SELECT 
+                akta.api_key_id,
+                akt.id AS tag_id,
+                akt.tag_name,
+                akta.created_at AS tag_created_at
+            FROM api_key_tag_association akta
+            JOIN api_key_tag akt ON akta.tag_id = akt.id
+            WHERE akta.api_key_id IN (SELECT id FROM api_keys)
+            AND akta.is_deleted = FALSE
+            AND akt.is_deleted = FALSE
         )
         SELECT 
             k.*,
-            q.relation_id,  -- Include relation_id in the SELECT
+            q.relation_id,
             q.model_id AS quota_model_id,
             q.model_name,
             q.max_token_quota,
             q.max_prompt_tokens_quota,
             q.max_completion_tokens_quota,
             q.created_at AS quota_created_at,
+            kt.tag_id,
+            kt.tag_name,
+            kt.tag_created_at,
             COALESCE((
                 SELECT SUM(prompt_tokens) 
                 FROM inference_api_key_token_usage 
@@ -514,7 +530,8 @@ async def get_multi_model_api_keys(request: Request):
             ), 0) AS used_total_tokens
         FROM api_keys k
         LEFT JOIN quotas q ON k.id = q.api_key_id
-        ORDER BY k.created_at DESC, q.created_at;
+        LEFT JOIN key_tags kt ON k.id = kt.api_key_id
+        ORDER BY k.created_at DESC, q.created_at, kt.tag_created_at;
         """
 
         records = await conn.fetch(query)
@@ -542,12 +559,17 @@ async def get_multi_model_api_keys(request: Request):
                         else None
                     ),
                     "models": [],
+                    "tags": [],  # 新增标签字段
                 }
 
-            if record["quota_model_id"]:
+            # 添加模型信息
+            if record["quota_model_id"] and not any(
+                m["model_id"] == record["quota_model_id"]
+                for m in response_map[key_id]["models"]
+            ):
                 response_map[key_id]["models"].append(
                     {
-                        "relation_id": record["relation_id"],  # Add relation_id here
+                        "relation_id": record["relation_id"],
                         "model_id": record["quota_model_id"],
                         "model_name": record["model_name"],
                         "max_token_quota": record["max_token_quota"],
@@ -559,6 +581,18 @@ async def get_multi_model_api_keys(request: Request):
                         "used_completion_tokens": record["used_completion_tokens"],
                         "used_total_tokens": record["used_total_tokens"],
                         "created_at": record["quota_created_at"].isoformat(),
+                    }
+                )
+
+            # 添加标签信息
+            if record["tag_id"] and not any(
+                t["tag_id"] == record["tag_id"] for t in response_map[key_id]["tags"]
+            ):
+                response_map[key_id]["tags"].append(
+                    {
+                        "tag_id": record["tag_id"],
+                        "tag_name": record["tag_name"],
+                        "created_at": record["tag_created_at"].isoformat(),
                     }
                 )
 
@@ -607,3 +641,162 @@ async def delete_multi_model_api_key(
             )
 
     return {"id": updated_result["id"], "isDeleted": updated_result["is_deleted"]}
+
+
+@router.post("/apikey/{api_key_id}/tags", response_model=ApiKeyTagResponse)
+async def add_tags_to_api_key(
+    request: Request,
+    api_key_id: int,
+    tag_names: List[str],
+):
+    """
+    为API Key添加标签
+    """
+    db = request.app.state.db_pool
+    created_at = datetime.now()
+
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            # 1. 检查API Key是否存在且未删除
+            query_check_key = """
+            SELECT id FROM inference_api_key
+            WHERE id = $1 AND is_deleted = FALSE
+            """
+            key_exists = await conn.fetchval(query_check_key, api_key_id)
+            if not key_exists:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"API Key with id {api_key_id} not found or marked as deleted",
+                )
+
+            # 2. 处理每个标签
+            added_tags = []
+            for tag_name in tag_names:
+                # 2.1 检查标签是否存在，不存在则创建
+                query_get_or_create_tag = """
+                WITH new_tag AS (
+                    INSERT INTO api_key_tag (tag_name, created_at)
+                    VALUES ($1, $2)
+                    ON CONFLICT (tag_name) DO NOTHING
+                    RETURNING id, tag_name, created_at
+                )
+                SELECT id, tag_name, created_at FROM new_tag
+                UNION
+                SELECT id, tag_name, created_at FROM api_key_tag
+                WHERE tag_name = $1 AND is_deleted = FALSE
+                """
+                tag_result = await conn.fetchrow(
+                    query_get_or_create_tag,
+                    tag_name,
+                    created_at,
+                )
+
+                # 2.2 检查是否已关联
+                query_check_association = """
+                SELECT 1 FROM api_key_tag_association
+                WHERE api_key_id = $1 AND tag_id = $2 AND is_deleted = FALSE
+                """
+                association_exists = await conn.fetchval(
+                    query_check_association,
+                    api_key_id,
+                    tag_result["id"],
+                )
+
+                if association_exists:
+                    continue  # 已存在关联则跳过
+
+                # 2.3 创建关联
+                query_create_association = """
+                INSERT INTO api_key_tag_association (
+                    api_key_id, tag_id, created_at
+                )
+                VALUES ($1, $2, $3)
+                ON CONFLICT (api_key_id, tag_id) 
+                DO UPDATE SET is_deleted = FALSE, deleted_at = NULL
+                """
+                await conn.execute(
+                    query_create_association,
+                    api_key_id,
+                    tag_result["id"],
+                    created_at,
+                )
+
+                added_tags.append(
+                    {
+                        "tag_id": tag_result["id"],
+                        "tag_name": tag_result["tag_name"],
+                        "created_at": tag_result["created_at"].isoformat(),
+                    }
+                )
+
+    return {
+        "api_key_id": api_key_id,
+        "added_tags": added_tags,
+        "message": "Tags added successfully" if added_tags else "No new tags added",
+    }
+
+
+@router.delete("/apikey/{api_key_id}/tags", response_model=ApiKeyTagResponse)
+async def remove_tags_from_api_key(
+    request: Request,
+    api_key_id: int,
+    tag_names: List[str],
+):
+    """
+    从API Key移除标签
+    """
+    db = request.app.state.db_pool
+    deleted_at = datetime.now()
+
+    async with db.acquire() as conn:
+        async with conn.transaction():
+            # 1. 检查API Key是否存在且未删除
+            query_check_key = """
+            SELECT id FROM inference_api_key
+            WHERE id = $1 AND is_deleted = FALSE
+            """
+            key_exists = await conn.fetchval(query_check_key, api_key_id)
+            if not key_exists:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"API Key with id {api_key_id} not found or marked as deleted",
+                )
+
+            # 2. 处理每个标签
+            removed_tags = []
+            for tag_name in tag_names:
+                # 2.1 获取标签ID
+                query_get_tag = """
+                SELECT id, tag_name FROM api_key_tag
+                WHERE tag_name = $1 AND is_deleted = FALSE
+                """
+                tag_result = await conn.fetchrow(query_get_tag, tag_name)
+                if not tag_result:
+                    continue  # 标签不存在则跳过
+
+                # 2.2 标记删除关联
+                query_delete_association = """
+                UPDATE api_key_tag_association
+                SET is_deleted = TRUE, deleted_at = $1
+                WHERE api_key_id = $2 AND tag_id = $3 AND is_deleted = FALSE
+                """
+                await conn.execute(
+                    query_delete_association,
+                    deleted_at,
+                    api_key_id,
+                    tag_result["id"],
+                )
+
+                removed_tags.append(
+                    {
+                        "tag_id": tag_result["id"],
+                        "tag_name": tag_result["tag_name"],
+                        "deleted_at": deleted_at.isoformat(),
+                    }
+                )
+
+    return {
+        "api_key_id": api_key_id,
+        "removed_tags": removed_tags,
+        "message": "Tags removed successfully" if removed_tags else "No tags removed",
+    }

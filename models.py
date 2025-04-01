@@ -1,7 +1,7 @@
 # models.py
 from datetime import datetime
 from pydantic import BaseModel, field_validator, ConfigDict, Field
-from typing import Optional, List
+from typing import Dict, Optional, List
 
 
 class InferenceDeploymentCreate(BaseModel):
@@ -93,6 +93,14 @@ class ModelQuotaResponse(BaseModel):
     created_at: str
 
 
+class ApiKeyTagResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    tag_id: int
+    tag_name: str
+    created_at: str
+
+
 class MultiModelApiKeyResponse(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
@@ -104,12 +112,15 @@ class MultiModelApiKeyResponse(BaseModel):
     last_used_at: Optional[str] = None
     expires_at: Optional[str] = None
     models: List[ModelQuotaResponse]
+    tags: List[ApiKeyTagResponse]
+
 
 # Request model for quota updates
 class QuotaUpdateRequest(BaseModel):
     max_token_quota: Optional[int] = None
     max_prompt_tokens_quota: Optional[int] = None
     max_completion_tokens_quota: Optional[int] = None
+
 
 # Response model
 class QuotaUpdateResponse(BaseModel):
@@ -131,3 +142,12 @@ class DeleteApiKeyModelRelationResponse(BaseModel):
     api_key_id: int
     model_id: int
     relation_id: int
+
+
+class ApiKeyTagResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    api_key_id: int
+    added_tags: Optional[List[Dict]] = None
+    removed_tags: Optional[List[Dict]] = None
+    message: str
