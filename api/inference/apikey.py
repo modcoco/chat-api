@@ -97,7 +97,7 @@ async def create_multi_model_api_key(
                     created_at
                 ) 
                 VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id, model_id, max_token_quota, max_prompt_tokens_quota, 
+                RETURNING id as relation_id, model_id, max_token_quota, max_prompt_tokens_quota, 
                           max_completion_tokens_quota, created_at, is_deleted;
                 """
                 quota_result = await conn.fetchrow(
@@ -112,6 +112,7 @@ async def create_multi_model_api_key(
 
                 models.append(
                     {
+                        "relationId": quota_result["relation_id"],  # Added
                         "model_id": quota_result["model_id"],
                         "model_name": model_result["model_name"],
                         "max_token_quota": quota_result["max_token_quota"],
@@ -121,6 +122,7 @@ async def create_multi_model_api_key(
                         "max_completion_tokens_quota": quota_result[
                             "max_completion_tokens_quota"
                         ],
+                        "modelStatus": model_result["status"],  # Added
                         "created_at": quota_result["created_at"].isoformat(),
                         "is_deleted": quota_result["is_deleted"],
                     }
@@ -137,7 +139,8 @@ async def create_multi_model_api_key(
             key_result["expires_at"].isoformat() if key_result["expires_at"] else None
         ),
         "is_deleted": key_result["is_deleted"],
-        "models": models,  # Changed from model_quotas to models
+        "models": models,
+        "tags": [],  # Added empty tags array if not implemented yet
     }
 
 
@@ -390,6 +393,7 @@ async def update_api_key_model_quotas(
         - max_token_quota
         - max_prompt_tokens_quota
         - max_completion_tokens_quota
+        (pass -1 to set a quota to NULL)
 
     At least one quota field must be provided.
     """
@@ -409,18 +413,27 @@ async def update_api_key_model_quotas(
 
     # Add fields that were provided
     if "max_token_quota" in update_data:
-        updates.append("max_token_quota = $1")
-        params.append(update_data["max_token_quota"])
+        if update_data["max_token_quota"] == -1:
+            updates.append("max_token_quota = NULL")
+        else:
+            updates.append("max_token_quota = $1")
+            params.append(update_data["max_token_quota"])
 
     if "max_prompt_tokens_quota" in update_data:
-        position = len(params) + 1
-        updates.append(f"max_prompt_tokens_quota = ${position}")
-        params.append(update_data["max_prompt_tokens_quota"])
+        if update_data["max_prompt_tokens_quota"] == -1:
+            updates.append("max_prompt_tokens_quota = NULL")
+        else:
+            position = len(params) + 1
+            updates.append(f"max_prompt_tokens_quota = ${position}")
+            params.append(update_data["max_prompt_tokens_quota"])
 
     if "max_completion_tokens_quota" in update_data:
-        position = len(params) + 1
-        updates.append(f"max_completion_tokens_quota = ${position}")
-        params.append(update_data["max_completion_tokens_quota"])
+        if update_data["max_completion_tokens_quota"] == -1:
+            updates.append("max_completion_tokens_quota = NULL")
+        else:
+            position = len(params) + 1
+            updates.append(f"max_completion_tokens_quota = ${position}")
+            params.append(update_data["max_completion_tokens_quota"])
 
     # Add timestamp update
     updates.append("updated_at = NOW()")
