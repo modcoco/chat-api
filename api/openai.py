@@ -201,89 +201,119 @@ async def get_models_by_api_key(
         )
 
     async with request.app.state.db_pool.acquire() as conn:
-        api_key_record = await conn.fetchrow(
-            """
-            SELECT id FROM inference_api_key 
-            WHERE api_key = $1 AND is_deleted = FALSE 
-            AND (expires_at IS NULL OR expires_at > NOW())
-            """,
-            api_key,
-        )
-        if not api_key_record:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Invalid or expired API Key",
+        # Start a transaction
+        async with conn.transaction():
+            api_key_record = await conn.fetchrow(
+                """
+                SELECT id FROM inference_api_key 
+                WHERE api_key = $1 AND is_deleted = FALSE 
+                AND (expires_at IS NULL OR expires_at > NOW())
+                """,
+                api_key,
+            )
+            if not api_key_record:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Invalid or expired API Key",
+                )
+
+            # Get all associated model records
+            records = await conn.fetch(
+                """
+                SELECT 
+                    im.model_name,
+                    im.model_id,
+                    im.id as model_db_id,
+                    id.deployment_url,
+                    id.models_api_key,
+                    id.id as deployment_id
+                FROM inference_api_key_model iakm
+                JOIN inference_model im ON iakm.model_id = im.id
+                JOIN inference_deployment id ON im.inference_id = id.id
+                WHERE iakm.api_key_id = $1 
+                AND iakm.is_deleted = FALSE
+                AND im.is_deleted = FALSE 
+                AND id.is_deleted = FALSE
+                AND im.status = 'active'
+                """,
+                api_key_record["id"],
             )
 
-        # 获取所有关联的模型记录
-        records = await conn.fetch(
-            """
-            SELECT 
-                im.model_name,
-                im.model_id,
-                id.deployment_url,
-                id.models_api_key
-            FROM inference_api_key_model iakm
-            JOIN inference_model im ON iakm.model_id = im.id
-            JOIN inference_deployment id ON im.inference_id = id.id
-            WHERE iakm.api_key_id = $1 
-            AND iakm.is_deleted = FALSE
-            AND im.is_deleted = FALSE 
-            AND id.is_deleted = FALSE
-            AND im.status = 'active'
-            """,
-            api_key_record["id"],
-        )
+            all_models = []
+            # For each record, fetch models from the deployment URL
+            async with httpx.AsyncClient() as client:
+                tasks = []
+                for r in records:
+                    if not r["deployment_url"] or not r["models_api_key"]:
+                        # Mark model as inactive if URL or API key is missing
+                        await conn.execute(
+                            "UPDATE inference_model SET status = 'inactive' WHERE id = $1",
+                            r["model_db_id"],
+                        )
+                        continue
 
-        all_models = []
-        # 为每个record并行请求对应的/v1/models接口
-        async with httpx.AsyncClient() as client:
-            tasks = []
-            for r in records:
-                if not r["deployment_url"] or not r["models_api_key"]:
-                    continue
+                    tasks.append(fetch_models_for_record(client, r, conn))
 
-                tasks.append(fetch_models_for_record(client, r))
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+                for result in results:
+                    if isinstance(result, Exception):
+                        continue
+                    all_models.extend(result)
 
-            for result in results:
-                if isinstance(result, Exception):
-                    continue
-                all_models.extend(result)
-
-        return {"object": "list", "data": all_models}
+            return {"object": "list", "data": all_models}
 
 
 async def fetch_models_for_record(
-    client: httpx.AsyncClient, record: Dict
+    client: httpx.AsyncClient, record: Dict, conn
 ) -> List[Dict]:
-    """为单个record获取并处理模型数据"""
+    """Fetch and process model data for a single record, updating status if needed"""
+    url = f"{record['deployment_url'].rstrip('/')}/v1/models"
+    headers = {"Authorization": f"Bearer {record['models_api_key']}"}
+    matched_models = []
+
     try:
-        url = f"{record['deployment_url'].rstrip('/')}/v1/models"
-        headers = {"Authorization": f"Bearer {record['models_api_key']}"}
-        response = await client.get(url, headers=headers)
+        response = await client.get(url, headers=headers, timeout=10.0)
         response.raise_for_status()
         models_data = response.json()
 
-        matched_models = []
+        has_matching_model = False
         if "data" in models_data:
             for model in models_data["data"]:
                 if model.get("id", "").endswith(record["model_id"]):
-                    # 替换id和root为数据库中的model_name
+                    # Replace id and root with our model_name
                     model["id"] = record["model_name"]
                     if "root" in model:
                         model["root"] = record["model_name"]
                     matched_models.append(model)
+                    has_matching_model = True
 
-        return matched_models
+        # If no matching model was found in the response, mark as inactive
+        if not has_matching_model:
+            await conn.execute(
+                "UPDATE inference_model SET status = 'inactive' WHERE id = $1",
+                record["model_db_id"],
+            )
 
-    except httpx.HTTPStatusError as e:
-        print(f"HTTP error for {url}: {e.response.status_code}")
-    except Exception as e:
+    except (httpx.HTTPStatusError, httpx.RequestError) as e:
         print(f"Error fetching models from {url}: {str(e)}")
+        # Mark both the model and deployment as inactive
+        await conn.execute(
+            "UPDATE inference_model SET status = 'inactive' WHERE id = $1",
+            record["model_db_id"],
+        )
+        await conn.execute(
+            "UPDATE inference_deployment SET status = 'inactive' WHERE id = $1",
+            record["deployment_id"],
+        )
+    except Exception as e:
+        print(f"Unexpected error for {url}: {str(e)}")
+        await conn.execute(
+            "UPDATE inference_model SET status = 'inactive' WHERE id = $1",
+            record["model_db_id"],
+        )
 
-    return []
+    return matched_models
 
 
 async def generate_response(
