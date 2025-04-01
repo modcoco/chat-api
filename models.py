@@ -120,3 +120,14 @@ class QuotaUpdateResponse(BaseModel):
     max_prompt_tokens_quota: Optional[int]
     max_completion_tokens_quota: Optional[int]
     updated_at: datetime
+
+
+class DeleteApiKeyModelRelationResponse(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    success: bool
+    message: str
+    deleted_at: str
+    api_key_id: int
+    model_id: int
+    relation_id: int
