@@ -84,6 +84,8 @@ curl --noproxy '*' -X POST "http://localhost:5000/v1/chat/completions" \
 ```
 
 ```json
+// curl --noproxy '*' http://localhost:8000/version
+{"version":"0.8.1"}
 // curl --noproxy '*' http://localhost:8000/v1/models
 {
   "object": "list",

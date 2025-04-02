@@ -16,12 +16,21 @@ async def get_inference_deployments(
     FROM inference_deployment where is_deleted = FALSE
     """
     if inference_name:
-        query += " WHERE inference_name = $1"
+        query += " AND inference_name = $1"
         rows = await conn.fetch(query, inference_name)
     else:
         rows = await conn.fetch(query)
 
     return [InferenceDeployment(**row) for row in rows]
+
+
+async def update_deployment_status(conn, deployment_id: int, status: str):
+    query = """
+    UPDATE inference_deployment
+    SET status = $1, updated_at = NOW()
+    WHERE id = $2
+    """
+    await conn.execute(query, status, deployment_id)
 
 
 async def create_inference_deployment(conn, deployment: InferenceDeploymentCreate):

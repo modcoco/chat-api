@@ -6,6 +6,7 @@ import httpx
 from app.inference_deployment import (
     create_inference_deployment,
     get_inference_deployments,
+    update_deployment_status,
 )
 from models import InferenceDeployment, InferenceDeploymentCreate
 
@@ -56,7 +57,45 @@ async def get_deployments(
             raise HTTPException(
                 status_code=404, detail="Inference deployments not found."
             )
-        return deployments
+
+        # Check and update deployment statuses
+        updated_deployments = []
+        async with httpx.AsyncClient() as client:
+            for deployment in deployments:
+                # Skip checking if deployment is already inactive and we're not forcing a check
+                if deployment.status != "active":
+                    # Only check inactive deployments if they have a URL and API key
+                    if not deployment.deployment_url or not deployment.models_api_key:
+                        updated_deployments.append(deployment)
+                        continue
+
+                try:
+                    # Make request to deployment URL to check status
+                    headers = {}
+                    if deployment.models_api_key:
+                        headers["Authorization"] = f"Bearer {deployment.models_api_key}"
+
+                    response = await client.get(
+                        f"{deployment.deployment_url}/v1/models",
+                        headers=headers,
+                        timeout=5.0,  # Add timeout to prevent hanging
+                    )
+                    response.raise_for_status()
+
+                    # Request succeeded, deployment should be active
+                    if deployment.status != "active":
+                        await update_deployment_status(conn, deployment.id, "active")
+                        deployment.status = "active"
+
+                except (httpx.HTTPError, httpx.TimeoutException):
+                    # Request failed, deployment should be inactive
+                    if deployment.status == "active":
+                        await update_deployment_status(conn, deployment.id, "inactive")
+                        deployment.status = "inactive"
+
+                updated_deployments.append(deployment)
+
+        return updated_deployments
 
 
 @router.patch("/deployment/{id}", status_code=204)
