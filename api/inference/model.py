@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -60,9 +61,6 @@ async def get_all_inference_services(
             {snake_to_camel(key): value for key, value in dict(service).items()}
             for service in services
         ]
-
-
-from datetime import datetime
 
 
 @router.patch("/model/{id}", response_model=dict)
