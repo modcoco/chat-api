@@ -94,9 +94,10 @@ async def delete_deployment(
 async def get_model_ids(request: Request, id: int):
     db = request.app.state.db_pool
     async with db.acquire() as conn:
+        # 1. 获取部署信息（带状态）
         deployment = await conn.fetchrow(
             """
-            SELECT deployment_url, models_api_key 
+            SELECT id, deployment_url, models_api_key, status
             FROM inference_deployment 
             WHERE id = $1 AND is_deleted = FALSE
             """,
@@ -109,23 +110,28 @@ async def get_model_ids(request: Request, id: int):
             )
 
         deployment_url = deployment["deployment_url"]
-        models_api_key = (
-            deployment["models_api_key"] or "sk-default"
-        )  # 默认使用 "sk-default" 如果为空
-        url_with_models = f"{deployment_url}/v1/models"
+        models_api_key = deployment["models_api_key"] or "sk-default"
+        current_status = deployment["status"]
+        url_with_models = f"{deployment_url.rstrip('/')}/v1/models"
 
-        async with httpx.AsyncClient() as client:
-            try:
-                # 携带 Authorization 头
+        # 2. 尝试请求模型列表
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 headers = {"Authorization": f"Bearer {models_api_key}"}
                 response = await client.get(url_with_models, headers=headers)
                 response.raise_for_status()
-
                 data = response.json()
 
+                # 3. 请求成功 - 更新状态为active（如果之前不是）
+                if current_status != "active":
+                    await conn.execute(
+                        "UPDATE inference_deployment SET status = 'active' WHERE id = $1",
+                        id,
+                    )
+
+                # 4. 返回模型列表
                 if isinstance(data, dict) and "data" in data:
-                    # 返回模型列表，并关联 inference_id
-                    filtered_data = [
+                    return [
                         {
                             "id": item.get("id"),
                             "inferenceId": id,
@@ -135,12 +141,21 @@ async def get_model_ids(request: Request, id: int):
                         }
                         for item in data["data"]
                     ]
-                    return filtered_data
-                else:
-                    return []
-            except httpx.RequestError as e:
-                request.app.state.logger.error(f"Request error: {e}")
                 return []
-            except httpx.HTTPStatusError as e:
-                request.app.state.logger.error(f"HTTP error: {e}")
-                return []
+
+        except Exception as e:
+            # 5. 请求失败处理
+            print(f"Failed to fetch models: {str(e)}")
+
+            # 6. 更新状态为inactive（如果之前不是）
+            if current_status != "inactive":
+                await conn.execute(
+                    "UPDATE inference_deployment SET status = 'inactive' WHERE id = $1",
+                    id,
+                )
+
+            # 7. 返回错误信息（可选择返回空列表或错误详情）
+            raise HTTPException(
+                status_code=424,  # Failed Dependency
+                detail=f"Deployment is currently unavailable. Status set to inactive. Original error: {str(e)}",
+            )
