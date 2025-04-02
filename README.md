@@ -164,3 +164,10 @@ CREATE TABLE
 pip install pipreqs
 pipreqs /path/to/your/project --force
 ```
+
+## Build
+
+```bash
+docker pull python:3.10.16
+
+```
